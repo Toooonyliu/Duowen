@@ -9,3 +9,6 @@ Transcript-Demo.html
 *.key
 qa/exports/
 qa/export-artifacts/
+__pycache__/
+*.pyc
+.venv/

@@ -1,0 +1,11 @@
+# Linux x86_64 / Python 3.11. Install the CPU Torch wheels in Dockerfile first.
+-r requirements-api.txt
+torch==2.8.0
+torchaudio==2.8.0
+torchvision==0.23.0
+whisperx==3.8.6
+faster-whisper==1.2.1
+ctranslate2==4.8.5
+transformers==4.57.6
+pyannote.audio==4.0.7
+numpy==2.3.5

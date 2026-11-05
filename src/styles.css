@@ -618,3 +618,55 @@ body.drag-over::after { content: 'Drop audio files to add a recording'; position
 @media (prefers-reduced-transparency:reduce) {
   .upload-dropzone { background: #f8fbfa; }
 }
+
+/* A recording is one destination; native controls keep their own actions. */
+.recording-module { cursor: pointer; }
+.recording-module:has(.recording-main:focus-visible) { outline: 2px solid var(--accent); outline-offset: 4px; }
+.recording-main:focus-visible { outline: none; }
+.recording-module .player, .recording-module .processing-panel { cursor: default; }
+.recording-module .recording-main { cursor: pointer; }
+.record-status.ready-label { color: var(--success); }
+.state-uploading, .state-model-loading, .state-decoding, .state-transcribing, .state-aligning, .state-diarizing { color: var(--accent); }
+.state-error { color: var(--danger); }
+.state-cancelled, .state-interrupted { color: var(--warning); }
+.state-model-loading .status-top > .ph { animation: spin 1.1s linear infinite; }
+.state-uploading .status-top > .ph, .state-decoding .status-top > .ph, .state-transcribing .status-top > .ph,
+.state-aligning .status-top > .ph, .state-diarizing .status-top > .ph { animation: soft-pulse 1.4s ease-in-out infinite; }
+.processing-panel { cursor: default; max-width: 680px; }
+.processing-heading { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.processing-heading h3 { margin: 0; font-size: 21px; }
+.processing-heading .loading-ring { flex: 0 0 20px; }
+.processing-description { margin-bottom: 22px; color: var(--secondary); font-size: 14px; line-height: 1.6; }
+.job-progress { height: 6px; overflow: hidden; border-radius: 999px; background: #dce8e9; }
+.job-progress > span { display: block; height: 100%; border-radius: inherit; background: var(--accent); transition: width 220ms var(--ease); }
+.job-progress.is-indeterminate > span { width: 35%; animation: transcription-progress 1.7s ease-in-out infinite; }
+.job-progress-meta { display: flex; justify-content: space-between; gap: 12px; margin-top: 9px; color: var(--secondary); font-size: 12px; font-variant-numeric: tabular-nums; }
+.processing-actions { display: flex; align-items: center; gap: 16px; margin-bottom: 16px; }
+.processing-actions > button { display: inline-flex; align-items: center; gap: 7px; min-height: 40px; }
+.processing-actions > button .ph { font-size: 16px; }
+.processing-panel .process-steps { margin: 24px 0 16px; }
+.service-notice { display: flex; align-items: flex-start; gap: 10px; width: min(720px,100%); margin: 0 auto 20px; padding: 14px 18px; text-align: left; border: 1px solid rgba(135,91,37,.18); border-radius: 12px; background: #f3eee3; color: var(--warning); font-size: 13px; line-height: 1.5; }
+.service-notice > .ph { font-size: 20px; margin-top: 1px; }
+@keyframes transcription-progress { 0% { transform: translateX(-100%); } 60%,100% { transform: translateX(390%); } }
+@media (max-width: 600px) {
+  .processing-heading h3 { font-size: 19px; }
+  .processing-panel .process-steps { gap: 10px; }
+  .processing-panel .process-steps li { font-size: 11px; }
+  .job-progress-meta { font-size: 12px; }
+  .service-notice { padding: 12px 14px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .job-progress.is-indeterminate > span { animation: none; transform: none; width: 40%; }
+  .state-model-loading .status-top > .ph,
+  .state-uploading .status-top > .ph, .state-decoding .status-top > .ph, .state-transcribing .status-top > .ph,
+  .state-aligning .status-top > .ph, .state-diarizing .status-top > .ph { animation: none; }
+}
+.detail-mobile-status.state-ready { color: var(--success); }
+.state-cancelling { color: var(--accent); }
+.state-cancellation-unconfirmed { color: var(--warning); }
+.state-cancelling .status-top > .ph { animation: spin 1.1s linear infinite; }
+.processing-heading > .ph { font-size: 24px; color: var(--warning); }
+.processing-actions > button:disabled { opacity: .6; cursor: wait; }
+@media (prefers-reduced-motion: reduce) {
+  .state-cancelling .status-top > .ph { animation: none; }
+}
