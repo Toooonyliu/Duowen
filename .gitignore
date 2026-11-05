@@ -1,0 +1,11 @@
+node_modules
+dist/
+.DS_Store
+.env
+.env.*
+!.env.example
+Transcript-Demo.html
+*.pem
+*.key
+qa/exports/
+qa/export-artifacts/

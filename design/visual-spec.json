@@ -1,0 +1,130 @@
+{
+  "direction": "Mineral white / petrol ink / ice cyan",
+  "principles": [
+    "Retain v5 recording modules and minimal hierarchy",
+    "Use one accent family consistently across library and details",
+    "No decorative glow, colored blobs, gradients or marketing headings",
+    "Maintain text contrast on stable near-opaque reading surfaces"
+  ],
+  "colors": {
+    "canvas": "#EDF2F2",
+    "canvasSecondary": "#E3EBEC",
+    "surface": "#F8FBFA",
+    "surfaceRaised": "#FFFFFF",
+    "ink": "#183B40",
+    "secondary": "#566A6F",
+    "muted": "#596C71",
+    "accent": "#0B6875",
+    "accentSoft": "#D8EDF0",
+    "border": "rgba(24,59,64,0.10)",
+    "borderHover": "rgba(11,104,117,0.26)",
+    "success": "#236B58",
+    "warning": "#875B25",
+    "danger": "#A34545",
+    "primaryButton": "#183B40",
+    "primaryButtonText": "#F7FCFC",
+    "currentTurn": "#E6F1F1"
+  },
+  "typography": {
+    "family": "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+    "fileTitle": {
+      "size": 20,
+      "weight": 500
+    },
+    "detailTitle": {
+      "size": 24,
+      "weight": 500,
+      "tracking": "-0.02em"
+    },
+    "transcript": {
+      "size": 16,
+      "lineHeight": 1.6,
+      "maxMeasure": "62ch",
+      "weight": 400
+    },
+    "metadata": {
+      "size": 14,
+      "lineHeight": 1.4
+    },
+    "speaker": {
+      "size": 14,
+      "weight": 600
+    },
+    "numericVariant": "tabular-nums",
+    "preview": {
+      "size": 18,
+      "lineHeight": 1.6,
+      "maxMeasure": "42ch"
+    }
+  },
+  "layout": {
+    "libraryMaxWidth": 1200,
+    "detailMaxWidth": 1120,
+    "gutterDesktop": 40,
+    "gutterMobile": 20,
+    "modulePadding": 24,
+    "moduleGap": 12,
+    "moduleRadius": 16,
+    "controlRadius": 12,
+    "controlSize": 48,
+    "compactRowMinHeight": 84
+  },
+  "material": {
+    "recordingModule": "rgba(248,251,250,.88)",
+    "toolbar": "rgba(248,251,250,.82)",
+    "backdropBlur": "18px",
+    "restShadow": "0 2px 8px rgba(24,59,64,.035)",
+    "hoverShadow": "0 6px 18px rgba(24,59,64,.07)",
+    "detailReadingSurface": "#F8FBFA",
+    "hoverTransform": "translateY(-1px)"
+  },
+  "states": {
+    "rest": "Subtle boundary already visible; no hover-only affordance",
+    "hover": "140ms boundary and slight elevation; no content expansion",
+    "focus": "2px solid #0B6875; offset 3px",
+    "pressed": "90ms translateY(0); no text scaling",
+    "selected": "AccentSoft or accent border, never both a strong fill and glow",
+    "currentTranscript": "A quiet tint plus a short side indicator; retain timestamp and speaker",
+    "reducedMotion": "No translate, no scroll-linked effects; immediate or opacity/color changes",
+    "reducedTransparency": "Solid #F8FBFA module surfaces"
+  },
+  "icons": {
+    "library": "Phosphor Regular",
+    "package": "@phosphor-icons/core",
+    "source": "https://github.com/phosphor-icons/core",
+    "rationale": "Regular icons give compact, balanced Apple-like geometry without using the thin weight that can become faint at 20px.",
+    "size": 20,
+    "implementation": "Use official local SVG assets from the package; do not trace or hand-draw icons.",
+    "names": [
+      "magnifying-glass",
+      "upload-simple",
+      "play",
+      "pause",
+      "check-circle",
+      "clock",
+      "dots-three",
+      "caret-down",
+      "caret-right",
+      "arrow-left",
+      "download-simple",
+      "chat-circle-text",
+      "note-pencil",
+      "users",
+      "waveform"
+    ],
+    "buttonRules": "Tooltip on hover and focus; accessible name; 44px targets. Keep file names, dates, speakers, timestamps, ETA and playback speed textual."
+  },
+  "detailRules": [
+    "Library and detail share background, toolbar, cards, icons and type ramp.",
+    "Return icon at left; filename and metadata identify the page; no generic Transcript header above obvious transcript.",
+    "Player has the same 44px icon controls and petrol timeline.",
+    "Use timestamp gutter + speaker control + text measure; active turn tint and click-to-seek.",
+    "Notes and questions stay secondary, via one compact tab or side panel; collapse on mobile.",
+    "Speaker candidates are explicitly pending; renaming a speaker and reassigning a single turn are separate scopes."
+  ],
+  "validationAdjustments": [
+    "Mobile controls remain at least 44px",
+    "Tooltips hidden with display:none; visible hints align inward to avoid horizontal overflow",
+    "Detail transcript remains 16px; sidebar text at least14px"
+  ]
+}

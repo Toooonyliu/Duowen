@@ -1,0 +1,195 @@
+{
+  "recordings": [
+    {
+      "id": "studio-brainstorming-90s",
+      "title": "360 Studio Brainstorming",
+      "originalFilename": "360 Studio Brainstorming.m4a",
+      "clipFilename": "studio-brainstorming-90s.mp3",
+      "batchId": "real-sample-batch-20261105",
+      "uploadedAt": "2026-11-05T07:36:34.202489+00:00",
+      "duration": 90.0,
+      "audioUrl": "./samples/studio-brainstorming-90s.mp3",
+      "source": "user-recording",
+      "sourceLabel": "Real recording · ASR draft",
+      "status": "partial",
+      "transcriptReady": true,
+      "diarizationStatus": "not-run",
+      "reviewStatus": "uncorrected-asr",
+      "language": "zh",
+      "timingSource": "asr-segment-approximate",
+      "speakers": [
+        {
+          "id": "unassigned",
+          "name": "Unknown speaker",
+          "confirmed": false
+        }
+      ],
+      "segments": [
+        {
+          "id": "studio-brainstorming-90s-s1",
+          "start": 0.537,
+          "end": 16.13,
+          "speakerId": "unassigned",
+          "text": "我想到一个概念就是这鱼可以不一样的 对不对这是一个大的水足钢然后呢 它比如说它有一共有100条鱼然后一共有4个玩家 对吧",
+          "reviewStatus": "uncorrected-asr",
+          "timingSource": "asr-segment-approximate"
+        },
+        {
+          "id": "studio-brainstorming-90s-s2",
+          "start": 16.535,
+          "end": 35.823,
+          "speakerId": "unassigned",
+          "text": "最后就是每个玩家都有自己的一块区域最后就是哪个区域比如说我一共给你一分半的时间最后哪个区域的与总数最多谁就赢对吧然后这个玩家呢他只能操作就是操作比如说他可以投放右往",
+          "reviewStatus": "uncorrected-asr",
+          "timingSource": "asr-segment-approximate"
+        },
+        {
+          "id": "studio-brainstorming-90s-s3",
+          "start": 36.262,
+          "end": 65.033,
+          "speakerId": "unassigned",
+          "text": "或者是它可以用水波去扑西一些鱼然后鱼也可以分层比如说有最基础的沙丁鱼然后又有大的沙鱼或者什么别的鱼然后有一些这种鱼它是自己会动的然后有一些就是有一些鱼是不受水波控制的比如说沙丁鱼你全比如说都拒绝要一个地方来两个沙鱼也会过来沙鱼可能会吃这样的鱼的沙丁鱼或者什么人来搞的",
+          "reviewStatus": "uncorrected-asr",
+          "timingSource": "asr-segment-approximate"
+        },
+        {
+          "id": "studio-brainstorming-90s-s4",
+          "start": 65.033,
+          "end": 89.975,
+          "speakerId": "unassigned",
+          "text": "就是他的变数就更多一点然后变数更多一点的话就更可以不同玩家之间也可以有策略比如说他可以把杀鱼吸引到杀鱼吸引到谁呢他的其他的小鱼就都被下跑或者怎么样被吃掉了那个人可能那一下就一点鱼都没有了那个区域对吧这种",
+          "reviewStatus": "uncorrected-asr",
+          "timingSource": "asr-segment-approximate"
+        }
+      ],
+      "notes": {
+        "status": "draft",
+        "source": "manually summarized from uncorrected local ASR; not a model-generated live response",
+        "summary": [
+          "The clip proposes an aquarium-based multiplayer game with about 100 fish and four players.",
+          "Each player has an area. A proposed 90-second round is won by the area with the most fish.",
+          "The brainstorm explores water movement, different fish types and interactions between larger and smaller fish.",
+          "These are exploratory ideas in a 90-second excerpt, not confirmed requirements for the complete recording."
+        ],
+        "summarySources": [
+          {
+            "index": 0,
+            "segmentIds": [
+              "studio-brainstorming-90s-s1"
+            ]
+          },
+          {
+            "index": 1,
+            "segmentIds": [
+              "studio-brainstorming-90s-s2"
+            ]
+          },
+          {
+            "index": 2,
+            "segmentIds": [
+              "studio-brainstorming-90s-s3",
+              "studio-brainstorming-90s-s4"
+            ]
+          },
+          {
+            "index": 3,
+            "segmentIds": [
+              "studio-brainstorming-90s-s1",
+              "studio-brainstorming-90s-s2",
+              "studio-brainstorming-90s-s3",
+              "studio-brainstorming-90s-s4"
+            ]
+          }
+        ],
+        "actions": [],
+        "decisions": []
+      },
+      "qa": [
+        {
+          "question": "What is this clip about?",
+          "answer": "This ASR draft describes an aquarium-based multiplayer game concept. Players have separate areas and try to collect more fish in their own area during a proposed timed round.",
+          "citationSegmentIds": [
+            "studio-brainstorming-90s-s1",
+            "studio-brainstorming-90s-s2"
+          ],
+          "status": "draft"
+        },
+        {
+          "question": "What rules are proposed?",
+          "answer": "The draft mentions roughly 100 fish, four players and separate player areas. It proposes a one-and-a-half-minute round, with the area containing the most fish winning. These details need checking against the audio.",
+          "citationSegmentIds": [
+            "studio-brainstorming-90s-s1",
+            "studio-brainstorming-90s-s2"
+          ],
+          "status": "draft"
+        },
+        {
+          "question": "What gameplay mechanics are explored?",
+          "answer": "The brainstorm discusses influencing fish with water movement, using different fish types, and interactions in which larger fish may affect or eat smaller fish. The draft also explores using these interactions as a strategy against another player.",
+          "citationSegmentIds": [
+            "studio-brainstorming-90s-s3",
+            "studio-brainstorming-90s-s4"
+          ],
+          "status": "draft"
+        },
+        {
+          "question": "What are the action items?",
+          "answer": "No explicit task owner or deadline is assigned in this 90-second excerpt. The content is a brainstorm, so this draft does not invent an action list.",
+          "citationSegmentIds": [
+            "studio-brainstorming-90s-s1",
+            "studio-brainstorming-90s-s2",
+            "studio-brainstorming-90s-s3",
+            "studio-brainstorming-90s-s4"
+          ],
+          "status": "draft"
+        },
+        {
+          "question": "What did we decide?",
+          "answer": "This excerpt contains proposed mechanics and winning conditions, but does not clearly confirm a final decision. The decisions list is therefore left empty.",
+          "citationSegmentIds": [
+            "studio-brainstorming-90s-s1",
+            "studio-brainstorming-90s-s2",
+            "studio-brainstorming-90s-s3",
+            "studio-brainstorming-90s-s4"
+          ],
+          "status": "draft"
+        }
+      ],
+      "provenance": {
+        "originalFilename": "360 Studio Brainstorming.m4a",
+        "originalDurationSeconds": 520.0,
+        "clipStartSeconds": 0.0,
+        "clipEndSeconds": 90.0,
+        "processing": "WhisperX 3.3.2 / faster-whisper base, local CPU int8; automatic language detection zh",
+        "audioUploadedToInferenceService": false,
+        "transcript": "Raw local ASR text, not manually corrected. Homophone and terminology errors remain.",
+        "timestamps": "The UI uses original ASR segment bounds. Forced-alignment output is retained separately but not treated as verified word timings.",
+        "alignmentCaution": "Chinese Wav2Vec2 checkpoint emitted a legacy weight_norm parameter-name mismatch / newly initialized weights warning. 4 of 373 character-level entries also lack timings. No timing accuracy measurement is claimed.",
+        "speakerIdentification": "Not run; Hugging Face credential was not configured. Unknown speaker is an unassigned bucket, not a claim that only one person is present.",
+        "notesAndQa": "Authored from the uncorrected ASR excerpt and linked to stable segment IDs. No live LLM request.",
+        "publicDistributionApproved": true,
+        "publicationAuthorization": "User requested the current version in public Toooonyliu/Duowen and a published webpage on November 5, 2026; only this 90-second excerpt is included."
+      },
+      "sourceDuration": 520,
+      "excerpt": {
+        "start": 0,
+        "end": 90
+      }
+    }
+  ],
+  "provenance": {
+    "originalFilename": "360 Studio Brainstorming.m4a",
+    "originalDurationSeconds": 520.0,
+    "clipStartSeconds": 0.0,
+    "clipEndSeconds": 90.0,
+    "processing": "WhisperX 3.3.2 / faster-whisper base, local CPU int8; automatic language detection zh",
+    "audioUploadedToInferenceService": false,
+    "transcript": "Raw local ASR text, not manually corrected. Homophone and terminology errors remain.",
+    "timestamps": "The UI uses original ASR segment bounds. Forced-alignment output is retained separately but not treated as verified word timings.",
+    "alignmentCaution": "Chinese Wav2Vec2 checkpoint emitted a legacy weight_norm parameter-name mismatch / newly initialized weights warning. 4 of 373 character-level entries also lack timings. No timing accuracy measurement is claimed.",
+    "speakerIdentification": "Not run; Hugging Face credential was not configured. Unknown speaker is an unassigned bucket, not a claim that only one person is present.",
+    "notesAndQa": "Authored from the uncorrected ASR excerpt and linked to stable segment IDs. No live LLM request.",
+    "publicDistributionApproved": true,
+    "publicationAuthorization": "User requested the current version in public Toooonyliu/Duowen and a published webpage on November 5, 2026; only this 90-second excerpt is included."
+  }
+}

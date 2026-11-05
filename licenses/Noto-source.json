@@ -1,0 +1,12 @@
+{
+  "repository": "https://github.com/notofonts/noto-cjk",
+  "commit": "f8d157532fbfaeda587e826d4cd5b21a49186f7c",
+  "fontUrl": "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/Variable/TTF/Subset/NotoSansSC-VF.ttf",
+  "licenseUrl": "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/LICENSE",
+  "localFile": "public/fonts/NotoSansSC-Regular.ttf",
+  "fontFamily": "Noto Sans SC",
+  "processing": "fontTools 4.68.0: instantiateVariableFont(source, {\"wght\": 400}, inplace=True); save static TrueType font. No text/content subset.",
+  "sha256": "b9b9705e7f61f5733b2aa7ecd8ccf04448b3b34e4742b927927ebbf0e7c393f9",
+  "pdfEmbedding": "Full static TrueType font, compressed by pdf-lib. Runtime fontkit CJK subsets failed visual QA and are intentionally disabled. Localized glyph substitution is disabled to preserve PDF character widths.",
+  "qa": "Actual PDFs rendered with Poppler and Unicode text extracted; DOCX rendered with LibreOffice using an explicit fontconfig path."
+}
