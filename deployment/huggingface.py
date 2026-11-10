@@ -55,8 +55,8 @@ sdk: docker
 app_port: 7860
 ---
 
-Duowen's WhisperX transcription service. Audio is decoded and processed by
-WhisperX; each visitor owns a private job capability. CPU Basic, one replica,
+Duowen's transcription service uses WhisperX for speech and timing and NVIDIA
+Nemotron for speaker separation. Each visitor owns a private job capability. CPU Basic, one replica,
 one ASGI worker. Input media is removed after processing. Results are retained
 for up to 24 hours in the container's SQLite database. Space storage is ephemeral:
 a container replacement can interrupt tasks or remove server-side results.
@@ -116,9 +116,12 @@ def main():
     inference_token = os.getenv('DUOWEN_INFERENCE_HF_TOKEN')
     if inference_token:
         api.add_space_secret(repo_id=repo_id, key='HF_TOKEN', value=inference_token)
+        # An explicit pyannote credential selects pyannote over the image's Nemotron default.
+        api.add_space_variable(repo_id=repo_id, key='DUOWEN_NEMO_SPEECH_BIN', value='')
+        api.add_space_variable(repo_id=repo_id, key='DUOWEN_NEMO_DIARIZATION_MODEL', value='')
         api.add_space_variable(repo_id=repo_id, key='DUOWEN_DIARIZE', value='1')
     elif created:
-        api.add_space_variable(repo_id=repo_id, key='DUOWEN_DIARIZE', value='0')
+        api.add_space_variable(repo_id=repo_id, key='DUOWEN_DIARIZE', value='1')
     # Reusing a Space without a new token must preserve its existing diarization
     # setting and runtime secret, including secrets configured through the UI.
     with tempfile.TemporaryDirectory(prefix='duowen-space-') as temporary:
@@ -130,8 +133,8 @@ def main():
     runtime = api.get_space_runtime(repo_id)
     print(json.dumps({'space': repo_id, 'host': info.host, 'stage': str(runtime.stage),
                       'hardwareRequested': 'cpu-basic',
-                      'diarizationEnabled': True if inference_token else False if created else None,
-                      'diarizationSetting': 'enabled' if inference_token else 'default-off' if created else 'preserved'}))
+                      'diarizationEnabled': True if inference_token or created else None,
+                      'diarizationSetting': 'pyannote' if inference_token else 'nemotron' if created else 'preserved'}))
 
 
 if __name__ == '__main__':

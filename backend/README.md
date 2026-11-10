@@ -49,7 +49,9 @@ The upload and decoded media are deleted after a terminal result; transcript res
 
 ## Speaker separation
 
-Default `DUOWEN_DIARIZE=0` produces real transcripts with **unassigned** speakers. To enable clustering, the owner must accept the Hugging Face agreement for `pyannote/speaker-diarization-community-1`, configure a read-only `HF_TOKEN` as a **server runtime secret**, and set `DUOWEN_DIARIZE=1`. The service will never invent names or claim a single detected person when diarization has not run. A missing/unauthorized token does not prevent ASR; speaker separation is explicitly left not-run/failed.
+The Docker image enables NVIDIA Nemotron by default. When running the Python API outside Docker, `DUOWEN_DIARIZE=0` leaves speakers unassigned. To use WhisperX's pyannote pipeline, set `DUOWEN_DIARIZE=1`, leave both NeMo path variables empty, and provide a read-only `HF_TOKEN` as a server runtime secret. The Linux WhisperX version uses [community-1](https://huggingface.co/pyannote/speaker-diarization-community-1). The older Intel Mac environment uses [speaker-diarization-3.1](https://huggingface.co/pyannote/speaker-diarization-3.1) and [segmentation-3.0](https://huggingface.co/pyannote/segmentation-3.0). Accept the access conditions for the models used by your environment.
+
+To use NVIDIA's public model for local speaker separation, also set `DUOWEN_NEMO_SPEECH_BIN` and `DUOWEN_NEMO_DIARIZATION_MODEL` to the absolute paths of the [NeMo-Speech.cpp v0.3.0 executable](https://github.com/NVIDIA/NeMo-Speech.cpp/releases/tag/v0.3.0) and the [Nemotron-3-Diarization GGUF model](https://huggingface.co/nvidia/Nemotron-3-Diarization). With both paths set, NeMo runs on CPU for speaker separation and WhisperX provides the transcript, timestamps and speaker assignment. This path needs no token after downloading the public artifacts. Speaker labels are editable clusters. If separation cannot run, the transcript remains available and its speaker status reflects the failure.
 
 ## Hosting suitability and measured resource use
 

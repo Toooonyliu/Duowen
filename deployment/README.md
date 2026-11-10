@@ -20,9 +20,9 @@ Sources: [HF pricing](https://huggingface.co/pricing), [compute Space eligibilit
 
 ## Owner setup after cost approval
 
-The owner approves the US$9/month plan and completes PRO checkout personally if needed. Authenticate using the official hidden-input `hf auth login` prompt in a dedicated Python 3.11 environment installed from `deployment/requirements.txt`. Never send a token in chat or put it in a URL, command argument, GitHub Actions variable, browser config or source file.
+The owner completes PRO checkout personally if needed. The Space can be created and the prepared source files uploaded through the signed-in Hub website. For CLI deployment, use `hf auth login` in a dedicated Python 3.11 environment installed from `deployment/requirements.txt`. Never send a token in chat or put it in a URL, command argument, GitHub Actions variable, browser config or source file.
 
-Use a repository-write credential for Space deployment. For speaker clustering, separately accept the [pyannote community-1 model conditions](https://huggingface.co/pyannote/speaker-diarization-community-1), and provide a separate read-only inference token through the host's runtime Secrets. The deployment credential must not become the server's runtime token. For a new Space, the helper enables diarization when a separately supplied `DUOWEN_INFERENCE_HF_TOKEN` is present in its environment; otherwise speakers remain unassigned. A repeat deployment without a new token preserves the existing diarization setting and Secret, and reports that their validity has not been checked.
+The Docker image includes the public NVIDIA Nemotron model for speaker separation. It fetches the pinned Linux CPU runtime and model during the build and verifies both SHA-256 digests. A new Space uses this model without an inference token. To explicitly select [pyannote community-1](https://huggingface.co/pyannote/speaker-diarization-community-1), accept its conditions and supply a separate read-only `DUOWEN_INFERENCE_HF_TOKEN`. The deployment credential stays on the deployer's machine. Reusing a Space without a new inference token preserves existing runtime settings.
 
 ## Reviewable deployment helper
 
@@ -48,7 +48,7 @@ Offline deployment checks: `python -B -m unittest discover -s deployment/tests -
 
 1. Wait for the Linux Docker image to build. The dependency set was resolved on this Mac, but the Docker image has not yet been built or run here.
 2. Verify `/api/health` and preflight CORS from `https://toooonyliu.github.io`. Check that the HF proxy passes the per-job `Authorization: Bearer` header on GET and DELETE.
-3. Upload a new audio/video file through the frontend, read actual timestamped results, reload during processing, cancel a second task and confirm a decoder failure is actionable. If model access is authorized, test at least two real speakers and label the output as editable voice clusters.
+3. Upload a new audio/video file through the frontend, read actual timestamped results, reload during processing, cancel a second task and confirm a decoder failure is actionable. Verify that speaker separation runs and that the labels are editable.
 4. Set the GitHub repository Actions variable `TRANSCRIPTION_API_URL` to the verified HTTPS Space origin, without `/api` or credentials. Publish the tested branch to `main`; verify the resulting public Pages flow.
 
 ## Storage boundary

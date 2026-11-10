@@ -126,7 +126,26 @@ class ExistingSpaceSafetyTests(unittest.TestCase):
         self.assertLess(secret_index, enable_index)
         self.assertEqual(api.variables['DUOWEN_DIARIZE'], '1')
         self.assertTrue(outcome['diarizationEnabled'])
-        self.assertEqual(outcome['diarizationSetting'], 'enabled')
+        self.assertEqual(api.variables['DUOWEN_NEMO_SPEECH_BIN'], '')
+        self.assertEqual(api.variables['DUOWEN_NEMO_DIARIZATION_MODEL'], '')
+        self.assertEqual(outcome['diarizationSetting'], 'pyannote')
+
+    def test_new_space_uses_cpu_basic_and_enables_public_diarization(self):
+        api = ExistingSpaceAPI()
+        original_space_info = api.space_info
+
+        def space_info(repo_id):
+            if not any(kind == 'create' for kind, _ in api.mutations):
+                raise RepositoryNotFoundError
+            return original_space_info(repo_id)
+
+        api.space_info = space_info
+        outcome = deploy_offline(api)
+        created = next(payload for kind, payload in api.mutations if kind == 'create')
+        self.assertEqual(created['space_hardware'], 'cpu-basic')
+        self.assertEqual(api.variables['DUOWEN_DIARIZE'], '1')
+        self.assertFalse(any(kind == 'secret' for kind, _ in api.mutations))
+        self.assertEqual(outcome['diarizationSetting'], 'nemotron')
 
 
 if __name__ == '__main__':

@@ -28,3 +28,36 @@ jobs:
       - run: python -m pip install -r backend/requirements-api.txt httpx==0.28.1
       - run: python -m unittest discover -s backend/tests -v
       - run: python -B -m unittest discover -s deployment/tests -v
+  container:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.11'
+      - run: python -m pip install httpx==0.28.1
+      - name: Build and start the CPU image
+        run: |
+          python deployment/huggingface.py prepare --output "$RUNNER_TEMP/duowen-space"
+          docker build -t duowen-cpu "$RUNNER_TEMP/duowen-space"
+          docker run -d --name duowen-cpu --cpus=2 --memory=12g -p 127.0.0.1:7860:7860 duowen-cpu
+          curl -fsS --retry 20 --retry-connrefused --retry-delay 1 http://127.0.0.1:7860/api/health
+      - name: Transcribe the bundled sample with speaker separation
+        run: |
+          docker cp public/samples/studio-brainstorming-90s.mp3 duowen-cpu:/tmp/sample.mp3
+          docker exec duowen-cpu ffmpeg -nostdin -v error -i /tmp/sample.mp3 -t 20 /tmp/excerpt.wav
+          docker cp duowen-cpu:/tmp/excerpt.wav "$RUNNER_TEMP/excerpt.wav"
+          python backend/scripts/smoke_whisperx.py --url http://127.0.0.1:7860 --audio "$RUNNER_TEMP/excerpt.wav" --output "$RUNNER_TEMP/duowen-result.json"
+          python - "$RUNNER_TEMP/duowen-result.json" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          result = json.loads(Path(sys.argv[1]).read_text())["result"]
+          assert result["diarizationStatus"] == "completed", result["diarizationStatus"]
+          assert result["diarizationEngine"] == "nvidia-nemotron-3"
+          assert any(segment["speakerId"] != "unassigned" for segment in result["segments"])
+          PY
+      - if: failure()
+        run: docker logs duowen-cpu

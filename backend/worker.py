@@ -23,6 +23,25 @@ def finite(value):
     return isinstance(value, (float, int)) and not isinstance(value, bool) and math.isfinite(value)
 
 
+def read_rttm(path, duration):
+    import pandas as pd
+
+    turns = []
+    for line in path.read_text().splitlines():
+        fields = line.split()
+        if len(fields) < 8 or fields[0] != "SPEAKER":
+            continue
+        start, length = map(float, fields[3:5])
+        if not finite(start) or not finite(length):
+            continue
+        end = min(start + length, duration)
+        if 0 <= start < end:
+            turns.append((start, end, fields[7]))
+    if not turns:
+        raise ValueError("The diarization model returned no speaker turns.")
+    return pd.DataFrame(turns, columns=["start", "end", "speaker"])
+
+
 def run(folder):
     config = json.loads((folder / "config.json").read_text())
     revision = 0
@@ -113,28 +132,42 @@ def run(folder):
     elif config.get("align"):
         notes.append("Word alignment is not configured for this language; approximate ASR segment timestamps were retained.")
     diarization_status = "not-run"
+    diarization_engine = None
     token = os.getenv("HF_TOKEN")
-    if config.get("diarize") and token:
+    nemo_binary = os.getenv("DUOWEN_NEMO_SPEECH_BIN")
+    nemo_model = os.getenv("DUOWEN_NEMO_DIARIZATION_MODEL")
+    if config.get("diarize") and (token or (nemo_binary and nemo_model)):
         progress("diarizing", "Separating speakers; labels are voice clusters, not verified names")
         try:
-            from whisperx.diarize import DiarizationPipeline
-            auth_field = "token" if "token" in inspect.signature(DiarizationPipeline).parameters else "use_auth_token"
-            diarizer = DiarizationPipeline(device=config["device"], **{auth_field: token})
-            kwargs = {}
-            if "progress_callback" in inspect.signature(diarizer.__call__).parameters:
-                kwargs["progress_callback"] = lambda pct: progress("diarizing", "Separating speakers", pct)
-            frames = diarizer(audio, **kwargs)
+            if nemo_binary and nemo_model:
+                rttm = folder / "speakers.rttm"
+                subprocess.run([nemo_binary, "diarize", str(decoded), "--model", nemo_model,
+                                "--device", "cpu", "--preset", "v3-streaming",
+                                "--format", "rttm", "--output", str(rttm)],
+                               check=True, capture_output=True)
+                frames = read_rttm(rttm, duration)
+                diarization_engine = "nvidia-nemotron-3"
+            else:
+                from whisperx.diarize import DiarizationPipeline
+                auth_field = "token" if "token" in inspect.signature(DiarizationPipeline).parameters else "use_auth_token"
+                diarizer = DiarizationPipeline(device=config["device"], **{auth_field: token})
+                kwargs = {}
+                if "progress_callback" in inspect.signature(diarizer.__call__).parameters:
+                    kwargs["progress_callback"] = lambda pct: progress("diarizing", "Separating speakers", pct)
+                frames = diarizer(audio, **kwargs)
+                diarization_engine = "pyannote"
             result = whisperx.assign_word_speakers(frames, result, fill_nearest=False)
             diarization_status = "completed"
         except Exception:
             diarization_status = "failed"
+            diarization_engine = None
             notes.append("Speaker separation could not complete. Unassigned segments are left as Unknown speaker.")
         finally:
             if "diarizer" in locals():
                 del diarizer
             gc.collect()
     elif config.get("diarize"):
-        notes.append("Speaker separation was not run because the server has no authorized Hugging Face model token.")
+        notes.append("Speaker separation was not run because no authorized diarization model is configured.")
     segments, speaker_ids = [], []
     for item in result.get("segments", []):
         body = str(item.get("text", "")).strip()
@@ -155,7 +188,8 @@ def run(folder):
                  "confirmed": False} for index, speaker in enumerate(speaker_ids)]
     return {"segments": segments, "speakers": speakers, "language": language, "duration": duration,
             "timingSource": timing_source, "alignmentStatus": alignment_status,
-            "diarizationStatus": diarization_status, "engine": "whisperx", "model": config["model"],
+            "diarizationStatus": diarization_status, "diarizationEngine": diarization_engine,
+            "engine": "whisperx", "model": config["model"],
             "reviewStatus": "uncorrected-asr", "notes": notes}
 
 
