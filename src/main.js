@@ -16,8 +16,15 @@ const formatTime = value => {
   const s = Math.max(0, Math.floor(value));
   return (s >= 3600 ? Math.floor(s / 3600) + ':' : '') + (s >= 3600 ? String(Math.floor(s / 60) % 60).padStart(2, '0') : String(Math.floor(s / 60)).padStart(2, '0')) + ':' + String(s % 60).padStart(2, '0');
 };
-const formatSize = bytes => bytes >= 1024 * 1024 ? (bytes / 1024 / 1024).toFixed(1) + ' MB' : Math.max(1, Math.round(bytes / 1024)) + ' KB';
 const dateLabel = value => new Intl.DateTimeFormat('en-US', {month:'short', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit'}).format(new Date(value));
+const dayLabel = value => {
+  const date = new Date(value), today = new Date();
+  const days = Math.round((new Date(today.getFullYear(), today.getMonth(), today.getDate()) - new Date(date.getFullYear(), date.getMonth(), date.getDate())) / 86400000);
+  if (days === 0) return 'Today';
+  if (days === 1) return 'Yesterday';
+  return new Intl.DateTimeFormat('en-US', {month:'short', day:'numeric', ...(date.getFullYear() === today.getFullYear() ? {} : {year:'numeric'})}).format(date);
+};
+const timeLabel = value => new Intl.DateTimeFormat('en-US', {hour:'numeric', minute:'2-digit'}).format(new Date(value));
 const button = (name, label, action, extras = '', cls = '') => `<button type="button" class="icon-button ${cls}" aria-label="${esc(label)}" data-tooltip="${esc(label)}" data-action="${action}" ${extras}>${icon(name)}</button>`;
 const root = $('#root');
 root.setAttribute('aria-live', 'off');
@@ -26,11 +33,12 @@ audio.preload = 'metadata';
 audio.id = 'demo-audio';
 document.body.append(audio);
 const state = {
-  recordings: [], seed: [], knownSpeakers: [], expandedId: null, search: '', showSearch: false,
+  recordings: [], seed: [], knownSpeakers: [], search: '', showSearch: false,
   detailTab: 'transcript', transcriptSearch: '', audioId: null, currentTime: 0,
   playing: false, rate: 1, dialog: null, answer: null, messages: {}, collapsedBatches: new Set(),
   undo: null, loading: true, dragDepth: 0, pendingFiles: [], pendingSeek: null, processing: {},
-  libraryScroll: 0, lastView: 'upload', seedSignature: '', exportingFormat: null, deepgramStatus: null
+  libraryScroll: 0, lastView: 'upload', seedSignature: '', exportingFormat: null, deepgramStatus: null,
+  follow: true, followedSegment: null, searchIndex: 0
 };
 const localFiles = new Map();
 const transcriptionQueue = [];
@@ -67,7 +75,39 @@ function speakerById(rec, id) { return rec.speakers.find(s => s.id === id) || {i
 function displayName(speaker) { return speaker.name || speaker.label || 'Unknown speaker'; }
 function hasUnassignedSegments(rec) { return rec.segments.some(s=>s.speakerId === 'unassigned'); }
 function isAsrDraft(rec) { return Boolean(rec.asrDraft || ['draft','uncorrected-asr'].includes(rec.reviewStatus) || (rec.source === 'user-recording' && rec.reviewStatus !== 'reviewed')); }
-function speakerManagerLabel(rec) { return hasUnassignedSegments(rec) ? 'Assign speakers' : new Set(rec.segments.map(s=>s.speakerId)).size + ' speakers'; }
+// Speaker colors follow the order in which voices first appear, so the same
+// recording always reads the same way. Hues are tuned for text on the paper surface.
+const SPEAKER_COLORS = ['#0b6875', '#a2521d', '#5a4a9c', '#2f6e44', '#a13a62', '#35609a'];
+function speakerColors(rec) {
+  const colors = new Map();
+  rec.segments.forEach(segment => {
+    if (segment.speakerId !== 'unassigned' && !colors.has(segment.speakerId)) colors.set(segment.speakerId, SPEAKER_COLORS[colors.size % SPEAKER_COLORS.length]);
+  });
+  return colors;
+}
+function speakerStats(rec) {
+  const totals = new Map();
+  let all = 0;
+  rec.segments.forEach(segment => {
+    const seconds = Number.isFinite(segment.start) && Number.isFinite(segment.end) ? Math.max(0, segment.end - segment.start) : 0;
+    totals.set(segment.speakerId, (totals.get(segment.speakerId) || 0) + seconds);
+    all += seconds;
+  });
+  return [...totals].map(([id, seconds]) => ({id, share:all ? Math.round(seconds / all * 100) : null}));
+}
+function paragraphById(rec, id) { return groupTranscriptParagraphs(rec.segments).find(paragraph => String(paragraph.id) === String(id)); }
+function transcriptText(rec) {
+  let previous = null;
+  return groupTranscriptParagraphs(rec.segments).map(paragraph => {
+    const heading = paragraph.speakerId === previous ? '' : displayName(speakerById(rec, paragraph.speakerId)) + (Number.isFinite(paragraph.start) ? '  ' + formatTime(paragraph.start) : '') + '\n';
+    previous = paragraph.speakerId;
+    return heading + paragraph.text;
+  }).join('\n\n');
+}
+async function copyText(text, message) {
+  try { await navigator.clipboard.writeText(text); notify(message); }
+  catch { notify('Copying is not available in this browser.'); }
+}
 function route() {
   const match = location.hash.match(/^#\/recording\/(.+)$/);
   let id = null;
@@ -171,7 +211,6 @@ async function init() {
       state.recordings = [...local,...clone(state.seed)];
     }
     state.knownSpeakers = saved?.knownSpeakers || [];
-    state.expandedId = state.recordings.find(r => r.segments.length)?.id || null;
     state.loading = false;
     if (!location.hash || location.hash === '#/') history.replaceState(null,'',location.pathname + location.search + '#/upload');
     persist();
@@ -212,82 +251,96 @@ function statusMarkup(rec) {
   return `<span class="record-status state-${esc(current.key)} ${current.key==='ready'?'ready-label':''}" data-recording-status="${esc(rec.id)}" data-status-key="${esc(current.key)}"><span class="status-top">${icon(icons[current.key] || 'info')}<span>${esc(current.label)}</span></span>${current.detail ? '<span class="status-detail">'+esc(current.detail)+'</span>':''}</span>`;
 }
 function toolbar(mode = 'library') {
-  const detail = mode === 'detail';
-  return `<header class="toolbar ${detail ? 'detail-toolbar' : ''}">
-    <div class="toolbar-left">${detail ? button('arrow-left','Back to library','back') : mode === 'upload' ? `<div class="page-context">${icon('waveform')}<span>Upload</span></div>` : button('arrow-left','Back to upload','go-upload') + (state.showSearch || state.search ? `<div class="search-field">${icon('magnifying-glass')}<input id="library-search" type="search" autocomplete="off" placeholder="Search recordings" value="${esc(state.search)}" aria-label="Search recordings">${button('x','Close search','close-search','','small')}</div>` : button('magnifying-glass','Search recordings','search'))}</div>
-    <div class="toolbar-actions">${detail ? button('download-simple','Export transcript','export','data-id="' + esc(currentRec()?.id) + '"') : ''}
-    ${mode === 'upload' ? button('stack','Open library','go-library') : ''}${button('info','About this demo','info')}${mode === 'upload' ? '' : button('upload-simple','Add recordings','go-upload','','primary')}</div>
+  const link = (view, label, name) => `<a class="nav-link ${mode === view ? 'active' : ''}" href="#/${view}" ${mode === view ? 'aria-current="page"' : ''}>${icon(name)}<span>${label}</span></a>`;
+  const search = mode !== 'library' ? '' : state.showSearch || state.search
+    ? `<div class="search-field">${icon('magnifying-glass')}<input id="library-search" type="search" autocomplete="off" placeholder="Search recordings" value="${esc(state.search)}" aria-label="Search recordings">${button('x','Close search','close-search','','small')}</div>`
+    : button('magnifying-glass','Search recordings','search','','quiet');
+  return `<header class="toolbar">
+    <div class="toolbar-left"><a class="brand" href="#/upload" aria-label="Duowen home">${icon('waveform')}<span>Duowen</span></a>
+      <nav class="top-nav" aria-label="Primary">${link('upload','New','plus')}${link('library','Library','stack')}</nav></div>
+    <div class="toolbar-actions">${search}${button('info','About Duowen','info','','quiet')}</div>
   </header>`;
 }
-function player(rec, compact = false) {
+function player(rec) {
   const active = state.audioId === rec.id;
   const time = active ? audio.currentTime || 0 : 0;
-  return `<div class="player ${compact ? 'compact-player' : ''}" data-player="${esc(rec.id)}">
-    ${button(active && state.playing ? 'pause' : 'play', active && state.playing ? 'Pause audio' : 'Play audio','play','data-id="' + esc(rec.id) + '"','play-control')}
-    <div class="player-track"><input type="range" min="0" max="${Math.max(rec.duration,1)}" step="0.01" value="${time}" class="seek" aria-label="Seek audio" data-seek="${esc(rec.id)}" style="--progress:${rec.duration ? time / rec.duration * 100 : 0}%"></div>
-    <span class="player-time" data-time="${esc(rec.id)}">${formatTime(time)} / ${formatTime(rec.duration)}</span>
-    <label class="speed-select"><span class="sr-only">Playback speed</span><select data-speed="${esc(rec.id)}" aria-label="Playback speed">${[0.75,1,1.25,1.5,2].map(n => `<option value="${n}" ${state.rate === n ? 'selected' : ''}>${n}×</option>`).join('')}</select>${icon('caret-down')}</label>
-  </div>`;
-}
-function previewSegmentMarkup(rec, segment) {
-  const speaker = speakerById(rec, segment.speakerId);
-  const active = state.audioId === rec.id && segment.start !== null && audio.currentTime >= segment.start && audio.currentTime < (segment.end ?? Infinity);
-  return `<article class="transcript-turn ${active ? 'is-current' : ''}" id="segment-${esc(segment.id)}" data-segment="${esc(segment.id)}" data-recording="${esc(rec.id)}">
-    <button type="button" class="timecode" data-action="seek-segment" data-id="${esc(rec.id)}" data-segment-id="${esc(segment.id)}" ${segment.start === null ? 'disabled title="No timestamp in this imported text"' : 'aria-label="Play from ' + formatTime(segment.start) + '"'}>${formatTime(segment.start)}</button>
-    <div class="turn-content"><button type="button" class="speaker-label" data-action="speaker" data-id="${esc(rec.id)}" data-speaker-id="${esc(speaker.id)}" data-segment-id="${esc(segment.id)}">${esc(displayName(speaker))}${icon('caret-down')}${speaker.confirmed === false && speaker.id !== 'unassigned' ? '<span class="unconfirmed">Unconfirmed</span>' : ''}</button>
-    <p>${esc(segment.text)}</p></div>
-  </article>`;
+  const id = esc(rec.id);
+  const play = button(active && state.playing ? 'pause' : 'play', active && state.playing ? 'Pause audio' : 'Play audio','play','data-id="' + id + '"','play-control');
+  const track = `<div class="player-track"><input type="range" min="0" max="${Math.max(rec.duration,1)}" step="0.01" value="${time}" class="seek" aria-label="Seek audio" data-seek="${id}" style="--progress:${rec.duration ? time / rec.duration * 100 : 0}%"></div>`;
+  const clock = `<span class="player-time" data-time="${id}">${formatTime(time)} / ${formatTime(rec.duration)}</span>`;
+  const speed = `<label class="speed-select"><span class="sr-only">Playback speed</span><select data-speed="${id}" aria-label="Playback speed">${[0.75,1,1.25,1.5,2].map(n => `<option value="${n}" ${state.rate === n ? 'selected' : ''}>${n}×</option>`).join('')}</select>${icon('caret-down')}</label>`;
+  // The detail player is docked to the viewport so a 40-minute transcript never scrolls it away.
+  return `<div class="player-dock"><button type="button" class="follow-pill" data-action="follow" data-id="${id}" hidden>${icon('arrow-down')}Back to current line</button>
+    <div class="player dock-player" data-player="${id}" role="group" aria-label="Audio player">
+      ${button('arrow-counter-clockwise','Back 10 seconds','skip','data-id="' + id + '" data-delta="-10"','skip-control')}${play}${button('arrow-clockwise','Forward 10 seconds','skip','data-id="' + id + '" data-delta="10"','skip-control')}
+      ${track}${clock}${speed}
+    </div></div>`;
 }
 function recordingModule(rec) {
-  const expanded = state.expandedId === rec.id;
-  return `<article class="recording-module ${expanded ? 'is-expanded' : ''}" data-recording-card="${esc(rec.id)}" aria-label="${esc(rec.title)} recording">
+  const snippet = rec.segments.slice(0, 3).map(s => s.text).join(' ').slice(0, 220);
+  const speakers = new Set(rec.segments.map(s => s.speakerId).filter(id => id !== 'unassigned')).size;
+  return `<article class="recording-module" data-recording-card="${esc(rec.id)}" aria-label="${esc(rec.title)} recording">
     <div class="recording-header"><a href="#/recording/${encodeURIComponent(rec.id)}" class="recording-main" aria-label="Open ${esc(rec.title)}">
-      <div class="record-identity"><h2>${esc(rec.title)}</h2><div class="file-meta">${esc(rec.originalFilename)}<span aria-hidden="true"> · </span><span>${esc(fileSourceLabel(rec))}</span></div></div>
+      <div class="record-identity"><h2>${esc(rec.title)}</h2>${snippet ? `<p class="record-snippet">${esc(snippet)}</p>` : ''}<div class="file-meta">${speakers > 1 ? speakers + ' speakers<span aria-hidden="true"> · </span>' : ''}${esc(rec.originalFilename)}<span aria-hidden="true"> · </span><span>${esc(fileSourceLabel(rec))}</span></div></div>
       <span class="record-duration">${formatTime(rec.duration)}</span>${statusMarkup(rec)}</a>
-      ${button(expanded ? 'caret-up' : 'caret-right',expanded ? 'Collapse recording preview' : 'Preview recording','preview','data-id="' + esc(rec.id) + '"','preview-toggle')}
+      ${button('dots-three','Recording actions','recording-menu','data-id="' + esc(rec.id) + '"','quiet')}
     </div>
-    ${expanded ? `<div class="recording-preview">${player(rec,true)}
-      ${state.processing[rec.id] ? processingMarkup(rec) : rec.segments.length ? '<div class="preview-transcript">' + rec.segments.slice(0,2).map(s => previewSegmentMarkup(rec,s)).join('') + '</div>' : missingTranscript(rec,true)}
-      <div class="preview-footer">${button('arrows-out-simple','Open full recording','open','data-id="' + esc(rec.id) + '"','open-detail')}</div></div>` : ''}
   </article>`;
 }
 function libraryList() {
   const query = state.search.toLowerCase().trim();
   const filtered = state.recordings.filter(r => [r.title, r.originalFilename, ...r.speakers.map(displayName)].some(v => v.toLowerCase().includes(query)));
-  if (!filtered.length) return `<div class="empty-state">${icon(state.search ? 'magnifying-glass' : 'waveform')}<h2>${state.search ? 'No recordings found' : 'Your first recording starts here'}</h2><p>${state.search ? 'Try another file name or speaker.' : 'Add audio or video, or restore the sample library.'}</p>${state.search ? '<button class="text-button" data-action="clear-search">Clear search</button>' : '<button class="button primary" data-action="upload">Add audio</button>'}</div>`;
+  if (!filtered.length) return `<div class="empty-state">${icon(state.search ? 'magnifying-glass' : 'waveform')}<h2>${state.search ? 'No recordings found' : 'Your first recording starts here'}</h2><p>${state.search ? 'Try another file name or speaker.' : 'Add audio or video, or restore the sample library.'}</p>${state.search ? '<button class="text-button" data-action="clear-search">Clear search</button>' : '<button class="button primary" data-action="upload">'+icon('plus')+'New transcript</button>'}</div>`;
   const groups = new Map();
   filtered.forEach(r => { if (!groups.has(r.batchId)) groups.set(r.batchId, []); groups.get(r.batchId).push(r); });
   return [...groups.entries()].map(([id, recs]) => `<section class="batch" aria-label="Uploaded ${esc(dateLabel(recs[0].uploadedAt))}">
-    <button type="button" class="batch-header" data-action="batch" data-batch-id="${esc(id)}" aria-expanded="${!state.collapsedBatches.has(id)}">${icon('upload-simple')}<span>${esc(dateLabel(recs[0].uploadedAt))}</span><span class="batch-caret">${icon(state.collapsedBatches.has(id) ? 'caret-right' : 'caret-down')}</span>${state.collapsedBatches.has(id) ? '<span class="batch-count">' + recs.length + ' files</span>' : ''}</button>
+    <button type="button" class="batch-header" data-action="batch" data-batch-id="${esc(id)}" aria-expanded="${!state.collapsedBatches.has(id)}"><span class="batch-day">${esc(dayLabel(recs[0].uploadedAt))}</span><span class="batch-time">${esc(timeLabel(recs[0].uploadedAt))}</span><span class="batch-caret">${icon(state.collapsedBatches.has(id) ? 'caret-right' : 'caret-down')}</span>${state.collapsedBatches.has(id) ? '<span class="batch-count">' + recs.length + ' files</span>' : ''}</button>
     ${!state.collapsedBatches.has(id) ? '<div class="batch-list">' + recs.map(recordingModule).join('') + '</div>' : ''}
   </section>`).join('');
 }
 function renderLibrary() {
-  return `<main class="shell library-shell"><h1 class="sr-only">Library</h1>${toolbar()}<div class="library-context"><span>Library</span><span>${state.recordings.length} recording${state.recordings.length === 1 ? '' : 's'}</span></div><div id="recording-list">${libraryList()}</div><footer class="library-footer"><span>Interactive demo</span><span class="footer-dot">·</span><button type="button" class="quiet-link" data-action="info">About the recordings and local playback</button></footer></main>`;
+  return `<main class="shell library-shell">${toolbar()}<div class="library-context"><h1>Library</h1><span>${state.recordings.length} recording${state.recordings.length === 1 ? '' : 's'}</span></div><div id="recording-list">${libraryList()}</div><footer class="library-footer"><button type="button" class="quiet-link" data-action="info">About the recordings and local playback</button></footer></main>`;
+}
+function recentMarkup() {
+  const recent = state.recordings.slice(0, 3);
+  if (!recent.length) return '';
+  return `<section class="recent" aria-labelledby="recent-title">
+    <div class="recent-head"><h2 id="recent-title">Recent</h2><a class="text-button" href="#/library">All recordings${icon('arrow-right')}</a></div>
+    <div class="recent-list">${recent.map(rec => {
+      const snippet = rec.segments.length ? rec.segments.slice(0, 3).map(s => s.text).join(' ') : '';
+      return `<a class="recent-row" href="#/recording/${encodeURIComponent(rec.id)}">
+        <span class="recent-time">${esc(dayLabel(rec.uploadedAt))}</span>
+        <span class="recent-body"><strong>${esc(rec.title)}</strong>${snippet ? `<span class="recent-snippet">${esc(snippet.slice(0, 160))}</span>` : ''}</span>
+        ${rec.segments.length && !state.processing[rec.id] ? `<span class="recent-duration">${formatTime(rec.duration)}</span>` : statusMarkup(rec)}
+      </a>`;
+    }).join('')}</div>
+  </section>`;
+}
+function providerDetails(mode) {
+  return mode.engine !== 'deepgram' ? '' : `<details class="transcription-providers">
+    <summary>Transcription providers and pricing</summary>
+    <div class="provider-options">
+      <div class="provider-option ${mode.configured?'is-selected':''}"><div><strong>Deepgram Nova-3</strong><span class="provider-badge">${mode.configured?'Active':mode.checking?'Checking':'Unavailable'}</span></div><p>Estimated US$0.0072 per audio minute for prerecorded multilingual transcription with speaker labels. Deepgram offers a one-time US$200 trial credit.</p></div>
+      <div class="provider-option"><div><strong>Hugging Face + WhisperX</strong><span class="provider-badge">Planned</span></div><p>Compute estimate of US$0.03 per hour, or US$21.90 for 730 hours. Available once configured.</p></div>
+    </div>
+    <p>Provider billing may vary. Visitors are not charged.</p>
+  </details>`;
 }
 function renderUpload() {
   const mode = transcriptionMode();
+  const blocked = mode.engine==='deepgram' && !mode.configured;
   return `<main class="shell upload-shell">${toolbar('upload')}
     <section class="upload-entry" aria-labelledby="upload-title">
-      <div class="entry-heading"><h1 id="upload-title">Add audio or video</h1><p>Choose recordings. Your transcript will be created automatically.</p></div>
+      <div class="entry-heading"><h1 id="upload-title">Turn a recording into a transcript you can read.</h1><p>Drop in audio or video. Duowen separates the speakers, keeps every timestamp, and starts right away.</p></div>
       ${mode.configured===false ? '<div class="service-notice" role="status">'+icon('plug')+'<span><strong>'+(mode.checking ? 'Checking transcription service' : 'Transcription is unavailable')+'</strong><br>'+esc(mode.configurationError)+'</span></div>' : ''}
-      <div class="upload-dropzone" id="upload-dropzone">
-        <div class="upload-symbol">${icon('upload-simple')}</div>
-        <h2>Drop your files here</h2>
-        <p>One conversation, or a whole batch.</p>
-        <button type="button" class="button primary upload-choice" data-action="choose-upload" ${mode.engine==='deepgram' && !mode.configured?'disabled':''}>${icon('plus')}Choose audio or video</button>
-        <div class="upload-formats"><span>${icon('file-audio')}Audio</span><span>${icon('video')}Video</span><span class="formats-detail">MP3, M4A, WAV, MP4, MOV and more${mode.uploadLimit && mode.configured ? ` · Up to ${mode.uploadLimit} per file` : ''}</span></div>
+      <div class="upload-dropzone ${blocked?'is-disabled':''}" id="upload-dropzone">
+        <div class="upload-symbol">${icon('waveform')}</div>
+        <h2>Drop a recording anywhere</h2>
+        <button type="button" class="button primary upload-choice" data-action="choose-upload" ${blocked?'disabled':''}>${icon('plus')}Choose a file</button>
+        <p class="upload-formats">MP3, M4A, WAV, MP4, MOV and more${mode.uploadLimit && mode.configured ? ` · up to ${mode.uploadLimit} each` : ''} · several files at once is fine</p>
       </div>
-      <div class="upload-next"><button type="button" class="text-button sample-library-link" data-action="go-library">View sample library${icon('arrow-up-right')}</button><span>Listen to a recording and explore its transcript.</span></div>
-      <p class="upload-privacy">${icon('lock-key')}${mode.configured ? `Audio and video are sent to ${esc(mode.label)} to create your transcript.` : 'Audio and video uploads are unavailable.'}</p>
-      ${mode.engine === 'deepgram' ? `<details class="transcription-providers">
-        <summary>Transcription providers and pricing</summary>
-        <div class="provider-options">
-          <div class="provider-option ${mode.configured?'is-selected':''}"><div><strong>Deepgram Nova-3</strong><span class="provider-badge">${mode.configured?'Active':mode.checking?'Checking':'Unavailable'}</span></div><p>Estimated US$0.0072 per audio minute for prerecorded multilingual transcription with speaker labels. Deepgram offers a one-time US$200 trial credit.</p></div>
-          <div class="provider-option"><div><strong>Hugging Face + WhisperX</strong><span class="provider-badge">Planned</span></div><p>Compute estimate of US$0.03 per hour, or US$21.90 for 730 hours. Available once configured.</p></div>
-        </div>
-        <p>Provider billing may vary. Visitors are not charged.</p>
-      </details>` : ''}
+      <p class="upload-privacy">${icon('lock-key')}${mode.configured ? `Files are sent to ${esc(mode.label)} for transcription. Transcripts and edits stay in this browser.` : 'Audio and video uploads are unavailable.'}</p>
+      ${recentMarkup()}
     </section>
   </main>`;
 }
@@ -349,58 +402,122 @@ function qaMarkup(rec) {
     <form class="ask-form" id="ask-form"><label class="sr-only" for="question-input">Ask about this recording</label><input id="question-input" name="question" placeholder="Ask about this recording…" autocomplete="off" required><button type="submit" class="icon-button primary" aria-label="Ask question" data-tooltip="Ask question">${icon('arrow-up')}</button></form>
     <p class="fine-print">Suggested questions use prepared, source-linked answers. Other questions search this transcript for relevant passages.</p></div>`;
 }
-function transcriptParagraphMarkup(rec, paragraph) {
+function highlightText(text, query) {
+  if (!query) return esc(text);
+  const lower = text.toLowerCase();
+  let out = '', from = 0, at;
+  while ((at = lower.indexOf(query, from)) >= 0) {
+    out += esc(text.slice(from, at)) + '<mark class="hit">' + esc(text.slice(at, at + query.length)) + '</mark>';
+    from = at + query.length;
+  }
+  return out + esc(text.slice(from));
+}
+function transcriptParagraphMarkup(rec, paragraph, {startsTurn = true, color = '', query = ''} = {}) {
   const speaker = speakerById(rec, paragraph.speakerId);
   const first = paragraph.segments[0];
   const timestamp = formatTime(paragraph.start);
-  const singleSegment = paragraph.segments.length === 1;
   const record = `data-id="${esc(rec.id)}"`;
   const segment = `data-segment-id="${esc(first.id)}"`;
+  const paragraphRef = `data-paragraph-id="${esc(paragraph.id)}"`;
   const passages = paragraph.segments.map((passage, index) => {
     const text = String(passage.text ?? '');
     const separator = index ? transcriptSegmentSeparator(String(paragraph.segments[index - 1].text ?? ''), text) : '';
-    return `${separator}<span class="transcript-passage" id="segment-${esc(passage.id)}" data-segment="${esc(passage.id)}" data-recording="${esc(rec.id)}">${esc(text.trim())}</span>`;
+    return `${separator}<span class="transcript-passage" id="segment-${esc(passage.id)}" data-segment="${esc(passage.id)}" data-recording="${esc(rec.id)}">${highlightText(text.trim(), query)}</span>`;
   }).join('');
 
-  return `<article class="transcript-paragraph">
-    <header class="transcript-paragraph-heading">
-      <button type="button" class="speaker-label" data-action="speaker" ${record} ${segment} data-speaker-id="${esc(speaker.id)}">${esc(displayName(speaker))}${icon('caret-down')}</button>
+  // The speaker is named once per turn; later paragraphs of the same turn keep only their timestamp.
+  return `<article class="transcript-paragraph ${startsTurn ? 'starts-turn' : ''}" data-paragraph="${esc(paragraph.id)}" ${color ? `style="--speaker:${color}"` : ''}>
+    ${startsTurn ? `<header class="turn-head"><button type="button" class="speaker-label" data-action="speaker" ${record} data-speaker-id="${esc(speaker.id)}" aria-label="Rename ${esc(displayName(speaker))}"><span class="speaker-dot" aria-hidden="true"></span>${esc(displayName(speaker))}</button></header>` : ''}
+    <div class="para-row">
       <button type="button" class="timecode" data-action="seek-segment" ${record} ${segment} ${Number.isFinite(paragraph.start) ? `aria-label="Play from ${timestamp}"` : 'disabled title="No timestamp in this imported text"'}>${timestamp}</button>
-      ${button('dots-three', singleSegment ? 'Edit this transcript segment' : 'Edit segments in this paragraph', singleSegment ? 'segment-menu' : 'paragraph-menu', `${record} ${singleSegment ? segment : `data-paragraph-id="${esc(paragraph.id)}"`}`, 'quiet paragraph-menu')}
-    </header>
-    <p>${passages}</p>
+      <p>${passages}</p>
+      <div class="para-actions">${button('copy','Copy paragraph','copy-paragraph',`${record} ${paragraphRef}`,'quiet small')}${button('pencil-simple','Edit text','edit-paragraph',`${record} ${paragraphRef}`,'quiet small')}${button('user-switch','Change speaker for this paragraph','speaker',`${record} ${paragraphRef} data-speaker-id="${esc(speaker.id)}" data-scope="segment"`,'quiet small')}</div>
+    </div>
   </article>`;
 }
 function transcriptParagraphsMarkup(rec) {
   const query = state.transcriptSearch.trim().toLowerCase();
-  const paragraphs = groupTranscriptParagraphs(rec.segments).filter(paragraph => {
-    if (!query) return true;
-    const speaker = displayName(speakerById(rec, paragraph.speakerId));
-    return `${paragraph.text} ${speaker}`.toLowerCase().includes(query);
-  });
-  return paragraphs.length ? paragraphs.map(paragraph => transcriptParagraphMarkup(rec, paragraph)).join('') : '<div class="panel-empty"><p>No matching passages.</p></div>';
+  const colors = speakerColors(rec);
+  let previous = null;
+  return groupTranscriptParagraphs(rec.segments).map(paragraph => {
+    const startsTurn = paragraph.speakerId !== previous;
+    previous = paragraph.speakerId;
+    return transcriptParagraphMarkup(rec, paragraph, {startsTurn, color:colors.get(paragraph.speakerId), query});
+  }).join('');
+}
+function speakerStrip(rec) {
+  if (hasUnassignedSegments(rec)) return `<button type="button" class="speaker-chip is-action" data-action="manage-speakers" data-id="${esc(rec.id)}">${icon('users')}Assign speakers</button>`;
+  const colors = speakerColors(rec);
+  return speakerStats(rec).map(({id, share}) => {
+    const speaker = speakerById(rec, id);
+    return `<button type="button" class="speaker-chip" style="--speaker:${colors.get(id)}" data-action="speaker" data-id="${esc(rec.id)}" data-speaker-id="${esc(id)}" aria-label="Rename ${esc(displayName(speaker))}${share === null ? '' : ', ' + share + '% of speaking time'}"><span class="speaker-dot" aria-hidden="true"></span>${esc(displayName(speaker))}${share === null ? '' : `<span class="speaker-share">${share}%</span>`}</button>`;
+  }).join('');
 }
 function transcriptMarkup(rec) {
   if (state.processing[rec.id]) return processingMarkup(rec);
   if (!rec.segments.length) return missingTranscript(rec);
-  return `<div class="transcript-tools"><div class="transcript-search">${icon('magnifying-glass')}<input id="transcript-search" type="search" placeholder="Find in transcript" aria-label="Find in transcript" value="${esc(state.transcriptSearch)}"></div><button class="quiet-link follow-playback" aria-label="Go to current playback moment" data-action="follow" data-id="${esc(rec.id)}">${icon('crosshair')}<span>Current moment</span></button></div>
+  return `<div class="transcript-tools">
+      <div class="speaker-strip" aria-label="Speakers">${speakerStrip(rec)}</div>
+      <div class="transcript-search">${icon('magnifying-glass')}<input id="transcript-search" type="search" placeholder="Find in transcript" aria-label="Find in transcript" autocomplete="off" value="${esc(state.transcriptSearch)}"><span class="search-count" id="search-count" role="status"></span>${button('caret-up','Previous match','search-step','data-step="-1"','quiet small search-step')}${button('caret-down','Next match','search-step','data-step="1"','quiet small search-step')}</div>
+    </div>
     <div class="transcript-reading" id="transcript-turns">${transcriptParagraphsMarkup(rec)}</div>`;
+}
+function syncSearch(jump = false) {
+  const tools = $('.transcript-search');
+  if (!tools) return;
+  const hits = $$('#transcript-turns mark.hit');
+  const active = Boolean(state.transcriptSearch.trim());
+  state.searchIndex = hits.length ? (state.searchIndex % hits.length + hits.length) % hits.length : 0;
+  tools.classList.toggle('has-query', active);
+  $('#search-count').textContent = !active ? '' : hits.length ? `${state.searchIndex + 1} of ${hits.length}` : 'No matches';
+  hits.forEach((hit, index) => hit.classList.toggle('is-current-hit', index === state.searchIndex));
+  if (jump && hits.length) hits[state.searchIndex].scrollIntoView({behavior:'instant', block:'center'});
+}
+function finishParagraphEdit(save) {
+  const article = $('.transcript-paragraph.is-editing');
+  if (!article) return;
+  const rec = currentRec();
+  if (!save || !rec) { render(); return; }
+  const edits = $$('.transcript-passage', article).map(span => ({segment:rec.segments.find(s => String(s.id) === span.dataset.segment), text:span.textContent.replace(/\s+/g, ' ').trim()}));
+  if (edits.some(edit => !edit.text)) { notify('A passage cannot be empty. Type the words, or press Esc to cancel.'); return; }
+  const changed = edits.filter(edit => edit.segment && edit.segment.text !== edit.text);
+  if (!changed.length) { render(); return; }
+  rememberUndo('Text updated', rec.id);
+  changed.forEach(edit => { edit.segment.text = edit.text; });
+  rec.notesStale = true; state.answer = null; persist(); render(); notify('Transcript text saved.', 'undo');
+}
+function startParagraphEdit(article) {
+  if ($('.transcript-paragraph.is-editing')) finishParagraphEdit(true);
+  if (!article?.isConnected) article = article && $(`[data-paragraph="${CSS.escape(article.dataset.paragraph)}"]`);
+  if (!article) return;
+  article.classList.add('is-editing');
+  const spans = $$('.transcript-passage', article);
+  spans.forEach(span => { span.textContent = span.textContent; span.contentEditable = 'plaintext-only'; if (span.contentEditable !== 'plaintext-only') span.contentEditable = 'true'; span.spellcheck = true; });
+  article.insertAdjacentHTML('beforeend', '<div class="edit-bar"><span>Timestamps stay attached to each sentence.</span><button type="button" class="button secondary" data-action="cancel-edit">Cancel</button><button type="button" class="button primary" data-action="save-edit">Save<kbd>↵</kbd></button></div>');
+  const last = spans.at(-1);
+  last.focus();
+  const range = document.createRange(); range.selectNodeContents(last); range.collapse(false);
+  const selection = window.getSelection(); selection.removeAllRanges(); selection.addRange(range);
 }
 function renderDetail(rec) {
   const statusText = status(rec);
+  const ready = rec.segments.length > 0;
+  const id = esc(rec.id);
   return `<main class="shell detail-shell"><h1 class="sr-only">${esc(rec.title)} transcript</h1>${toolbar('detail')}
     <section class="recording-workspace">
-      <header class="detail-heading"><div><div class="detail-title-row"><button class="editable-title" data-action="rename-recording" data-id="${esc(rec.id)}" aria-label="Rename recording: ${esc(rec.title)}">${esc(rec.title)}${icon('pencil-simple')}</button><span class="sample-label">${esc(fileSourceLabel(rec))}</span></div><div class="detail-meta"><span>${esc(rec.originalFilename)}</span><span>${formatTime(rec.duration)}</span><span>${icon('upload-simple')}${esc(dateLabel(rec.uploadedAt))}</span></div></div>
-      <div class="detail-heading-actions">${statusMarkup(rec)}${button('dots-three','Recording actions','recording-menu','data-id="' + esc(rec.id) + '"')}</div></header>
-      <div class="detail-mobile-status state-${esc(statusText.key)}" data-mobile-status="${esc(rec.id)}">${icon(icons[statusText.key] || 'info')}<span>${esc(statusText.label)}${statusText.detail?' · '+esc(statusText.detail):''}</span></div>
-      <div class="detail-player-wrap">${player(rec)}</div>
+      <header class="detail-heading"><div class="detail-heading-main"><a class="crumb" href="#/library">${icon('arrow-left')}Library</a>
+        <div class="detail-title-row"><button class="editable-title" data-action="rename-recording" data-id="${id}" aria-label="Rename recording: ${esc(rec.title)}">${esc(rec.title)}${icon('pencil-simple')}</button></div>
+        <div class="detail-meta"><span>${formatTime(rec.duration)}</span><span>${esc(dayLabel(rec.uploadedAt))}, ${esc(timeLabel(rec.uploadedAt))}</span><span>${esc(rec.originalFilename)}</span><span class="sample-label">${esc(fileSourceLabel(rec))}</span></div></div>
+      <div class="detail-heading-actions">${statusMarkup(rec)}${ready ? `<button type="button" class="button secondary" data-action="copy-transcript" data-id="${id}">${icon('copy')}Copy</button><button type="button" class="button primary" data-action="export" data-id="${id}">${icon('download-simple')}Export</button>` : ''}${button('dots-three','Recording actions','recording-menu','data-id="' + id + '"','quiet')}</div></header>
+      <div class="detail-mobile-status state-${esc(statusText.key)}" data-mobile-status="${id}">${icon(icons[statusText.key] || 'info')}<span>${esc(statusText.label)}${statusText.detail?' · '+esc(statusText.detail):''}</span></div>
       <nav class="workspace-tabs" aria-label="Recording workspace"><div class="main-tabs" role="tablist">${[{id:'transcript',icon:'text-align-left',label:'Transcript'},{id:'notes',icon:'note-pencil',label:'Notes'},{id:'ask',icon:'chat-circle-text',label:'Ask'}].map(t => `<button id="tab-${t.id}" type="button" role="tab" aria-selected="${state.detailTab === t.id}" aria-controls="workspace-panel" class="workspace-tab ${state.detailTab === t.id ? 'active' : ''}" data-action="tab" data-tab="${t.id}">${icon(t.icon)}${t.label}</button>`).join('')}</div>
-      ${rec.segments.length ? '<button type="button" class="quiet-link speaker-manager" aria-label="' + esc(speakerManagerLabel(rec)) + '" data-action="manage-speakers" data-id="' + esc(rec.id) + '">' + icon('users') + '<span>' + speakerManagerLabel(rec) + '</span></button>' : ''}</nav>
+      ${ready ? '<span class="shortcut-hint" aria-hidden="true"><kbd>Space</kbd> play <kbd>←</kbd><kbd>→</kbd> 5s <kbd>/</kbd> find</span>' : ''}</nav>
       <div class="workspace-body" id="workspace-panel" role="tabpanel" aria-labelledby="tab-${state.detailTab}">
       ${state.detailTab === 'transcript' ? '<section class="transcript-panel" aria-label="Transcript">' + transcriptMarkup(rec) + '</section>' : '<section class="wide-panel">' + (state.detailTab === 'notes' ? notesMarkup(rec) : qaMarkup(rec)) + '</section>'}
       </div>
     </section>
-    <footer class="detail-footer"><span>${rec.source === 'synthetic-demo' ? 'Synthetic speech · authored transcript' : rec.source === 'local-upload' ? rec.needsAudio && rec.segments.length ? 'Transcript saved · reconnect audio for playback' : rec.segments.length ? 'Automatic transcript · review against the audio' : 'Audio selected · automatic transcription' : isAsrDraft(rec) ? 'Unreviewed ASR draft · check the audio when accuracy matters' : 'Sample recording · timestamped transcript'}</span><button class="quiet-link" data-action="info">About this demo</button></footer>
+    <footer class="detail-footer"><span>${rec.source === 'synthetic-demo' ? 'Synthetic speech · authored transcript' : rec.source === 'local-upload' ? rec.needsAudio && rec.segments.length ? 'Transcript saved · reconnect audio for playback' : rec.segments.length ? 'Automatic transcript · review against the audio' : 'Audio selected · automatic transcription' : isAsrDraft(rec) ? 'Unreviewed ASR draft · check the audio when accuracy matters' : 'Sample recording · timestamped transcript'}</span></footer>
+    ${ready || rec.audioUrl ? player(rec) : ''}
   </main>`;
 }
 function render() {
@@ -410,6 +527,7 @@ function render() {
   state.lastView = active.view;
   if (state.dialog && !$('#demo-dialog')) renderDialog();
   updatePlayers();
+  syncSearch();
   window.scrollTo({top:pos, behavior:'instant'});
 }
 function refreshList() {
@@ -475,6 +593,22 @@ function updatePlayers() {
     el.classList.toggle('is-current', current);
     if (current) el.setAttribute('aria-current','true'); else el.removeAttribute('aria-current');
   });
+  // Keep the spoken line in view while listening, until the reader scrolls away on purpose.
+  const listening = Boolean(playingRecord) && !audio.paused && route().id === playingRecord.id && state.detailTab === 'transcript';
+  const pill = $('.follow-pill');
+  if (pill) pill.hidden = !(listening && !state.follow);
+  if (listening && state.follow && !$('.transcript-paragraph.is-editing')) {
+    const line = $('.transcript-passage.is-current');
+    if (line && line.dataset.segment !== state.followedSegment) {
+      state.followedSegment = line.dataset.segment;
+      const box = line.getBoundingClientRect();
+      if (box.top < 120 || box.bottom > window.innerHeight - 200) line.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth',block:'center'});
+    }
+  }
+}
+function pauseFollowing() {
+  if (!state.follow || audio.paused || route().view !== 'detail') return;
+  state.follow = false; updatePlayers();
 }
 audio.addEventListener('timeupdate', updatePlayers);
 audio.addEventListener('play', () => { state.playing = true; updatePlayers(); });
@@ -507,7 +641,6 @@ function dialogFrame(title, body, footer = '') {
 }
 function renderDialog() {
   let dialog = $('#demo-dialog');
-  const previousType = dialog?.dataset.dialogType;
   const previousFocus = dialog?.contains(document.activeElement) ? document.activeElement?.id : null;
   if (!dialog) {
     dialog = document.createElement('dialog'); dialog.id='demo-dialog'; dialog.className='demo-dialog'; dialog.setAttribute('aria-labelledby','dialog-title');
@@ -517,8 +650,6 @@ function renderDialog() {
   }
   const d=state.dialog, rec=recordById(d.recordingId);
   dialog.dataset.dialogType = d.type;
-  if (d.type === 'upload') dialog.setAttribute('aria-describedby','upload-confirmation-note');
-  else dialog.removeAttribute('aria-describedby');
   let content = '';
   if (d.type === 'info') {
     const mode=transcriptionMode();
@@ -527,41 +658,18 @@ function renderDialog() {
     const excerpt=sample ? excerptInfo(sample) : null;
     const excerptDescription=excerpt ? (excerpt.start===0 ? 'First '+Math.round(excerpt.duration)+' seconds of '+formatTime(excerpt.original)+' source recording.' : formatTime(excerpt.start)+'–'+formatTime(excerpt.end)+' excerpt of '+formatTime(excerpt.original)+' source recording.') : '';
     const sourceInfo=sample && isAsrDraft(sample) ? `<div class="notice source-notice">${icon('info')}<span><strong>${esc(sample.title)} · ASR draft</strong><br>${excerptDescription ? esc(excerptDescription)+'<br>' : ''}Uncorrected text with approximate segment timestamps. ${hasUnassignedSegments(sample) ? 'Speakers have not been separated; Unknown speaker is an unassigned bucket.' : 'Speaker names have been manually assigned.'}</span></div>${provenance ? '<details class="source-details"><summary>How this recording was prepared</summary><p>' + esc(provenance.transcript || '') + '</p><p>' + esc(provenance.timestamps || '') + '</p><p>' + esc(provenance.notesAndQa || '') + '</p></details>' : ''}` : '';
-    content=dialogFrame('About Duowen',`<p class="dialog-lead">Listen, find the moment, and make the transcript yours.</p>${sourceInfo}<div class="info-feature">${icon('waveform')}<div><h3>A sample library to explore</h3><p>Bundled recordings include timestamped transcripts, prepared notes and source-linked answers.</p></div></div><div class="info-feature">${icon('lock-key')}<div><h3>Audio & privacy</h3><p>${mode.configured?`Audio and video are sent to ${esc(mode.label)} for transcription.`:'Audio and video uploads are unavailable.'} Your transcript and edits are saved in this browser.</p></div></div><div class="info-feature">${icon('sparkle')}<div><h3>Automatic, with clear feedback</h3><p>New recordings are transcribed automatically. Processing states reflect the actual job. Speaker separation is shown only when the service returns it; saved names do not perform voice matching.</p></div></div><p class="fine-print">Edits are saved in this browser. Local audio files need reconnecting after a refresh.</p>`,
+    content=dialogFrame('About Duowen',`<p class="dialog-lead">Listen, find the moment, and make the transcript yours.</p>${sourceInfo}<div class="info-feature">${icon('waveform')}<div><h3>A sample library to explore</h3><p>Bundled recordings include timestamped transcripts, prepared notes and source-linked answers.</p></div></div><div class="info-feature">${icon('lock-key')}<div><h3>Audio & privacy</h3><p>${mode.configured?`Audio and video are sent to ${esc(mode.label)} for transcription.`:'Audio and video uploads are unavailable.'} Your transcript and edits are saved in this browser.</p></div></div>${providerDetails(mode)}<div class="info-feature">${icon('sparkle')}<div><h3>Automatic, with clear feedback</h3><p>New recordings are transcribed automatically. Processing states reflect the actual job. Speaker separation is shown only when the service returns it; saved names do not perform voice matching.</p></div></div><p class="fine-print">Edits are saved in this browser. Local audio files need reconnecting after a refresh.</p>`,
       '<button class="quiet-link" data-action="confirm-reset">' + icon('arrow-counter-clockwise') + 'Reset demo</button><button class="button primary" data-action="close-dialog">Explore</button>');
-  } else if (d.type === 'upload') {
-    const mode=transcriptionMode();
-    const oversized=state.pendingFiles.some(file=>file.size>mode.maxUploadBytes);
-    const note=!mode.configured?mode.configurationError:oversized?`Remove files over ${mode.uploadLimit} or add a shorter copy.`:`Files will be sent to ${mode.label} for transcription.`;
-    const files=state.pendingFiles.map((file,i)=>`<li class="upload-file">
-      ${icon(file.type.startsWith('video/')?'video':'file-audio')}
-      <div><strong>${esc(file.name)}</strong><span>${formatSize(file.size)}${file.size>mode.maxUploadBytes?` · Over ${mode.uploadLimit} limit`:''}</span></div>
-      ${button('x','Remove ' + file.name,'remove-pending',`id="remove-upload-${i}" data-index="${i}"`,'small')}
-    </li>`).join('');
-    const count=state.pendingFiles.length;
-    content=dialogFrame('Add recordings',`<p class="upload-confirmation-note" id="upload-confirmation-note">${esc(note)}</p>
-      ${count?`<ul class="upload-files" aria-label="Selected recordings">${files}</ul>`:'<p class="upload-empty">No files selected.</p>'}`,
-      `<button type="button" class="button secondary" data-action="add-more-files" id="add-more-uploads">${icon('plus')}Add files</button>
-      <button type="button" class="button primary" data-action="confirm-upload" ${!count || !mode.configured || oversized ? 'disabled' : ''}>${count?`Transcribe ${count} recording${count===1?'':'s'}`:'Transcribe'}</button>`);
   } else if (d.type === 'speaker') {
     const speaker=speakerById(rec,d.speakerId);
     content=dialogFrame('Edit speaker',`<form id="speaker-form"><label class="field-label" for="speaker-name">Display name</label><input class="text-input" id="speaker-name" name="name" required maxlength="100" value="${esc(displayName(speaker))}" autocomplete="off">
       ${speaker.suggestedName && speaker.confirmed===false ? `<div class="suggested-person"><span class="panel-kicker">Sample suggestion · not voice recognition</span><strong>${esc(speaker.suggestedName)}</strong><div><button type="button" class="text-button" data-action="use-suggested" data-name="${esc(speaker.suggestedName)}">Use this name</button><button type="button" class="quiet-link" data-action="reject-suggested">Not this person</button></div></div>` : ''}
       ${state.knownSpeakers.length ? '<div class="saved-names"><span class="field-label">Choose a saved name</span><div>' + state.knownSpeakers.map(s => '<button type="button" class="name-choice" data-action="choose-name" data-name="' + esc(s.name) + '">' + icon('user') + esc(s.name) + '</button>').join('') + '</div></div>' : ''}
-      <fieldset class="scope-options"><legend>Apply to</legend><label><input type="radio" name="scope" value="speaker" ${d.scope!=='segment'?'checked':''}><span>${speaker.id === 'unassigned' ? 'All currently unassigned segments' : 'This speaker throughout this recording'}</span></label>${d.segmentId ? '<label><input type="radio" name="scope" value="segment" ' + (d.scope==='segment'?'checked':'') + '><span>Only this transcript segment</span></label>' : ''}</fieldset>
+      <fieldset class="scope-options"><legend>Apply to</legend><label><input type="radio" name="scope" value="speaker" ${d.scope!=='segment'?'checked':''}><span>${speaker.id === 'unassigned' ? 'All currently unassigned segments' : 'This speaker throughout this recording'}</span></label>${d.segmentId ? '<label><input type="radio" name="scope" value="segment" ' + (d.scope==='segment'?'checked':'') + '><span>' + (d.segmentIds?.length > 1 ? 'Only this paragraph' : 'Only this passage') + '</span></label>' : ''}</fieldset>
       <label class="check-label"><input type="checkbox" name="saveName"><span>Save this name for other recordings</span></label><p class="fine-print">Saving a name does not identify or learn someone’s voice.</p><div class="form-error" id="speaker-error" role="alert"></div>
       <div class="dialog-footer inline-footer"><button type="button" class="button secondary" data-action="close-dialog">Cancel</button><button type="submit" class="button primary">Save name</button></div></form>`);
   } else if (d.type === 'speakers') {
     content=hasUnassignedSegments(rec) ? dialogFrame('Assign speakers',`<p class="dialog-lead">Choose a passage to assign or correct its speaker.</p><div class="speaker-list segment-assignment-list">${rec.segments.map(s=>`<button class="speaker-list-row" data-action="speaker" data-id="${esc(rec.id)}" data-speaker-id="${esc(s.speakerId)}" data-segment-id="${esc(s.id)}" data-scope="segment"><span class="assignment-time">${formatTime(s.start)}</span><span><strong>${esc(displayName(speakerById(rec,s.speakerId)))}</strong><small>${esc(s.text)}</small></span>${icon('pencil-simple')}</button>`).join('')}</div>`) : dialogFrame('Speakers',`<p class="dialog-lead">Names belong to this recording. Change one without changing other files.</p><div class="speaker-list">${rec.speakers.filter(s=>rec.segments.some(t=>t.speakerId === s.id)).map(s=>`<button class="speaker-list-row" data-action="speaker" data-id="${esc(rec.id)}" data-speaker-id="${esc(s.id)}"><span class="speaker-avatar">${icon('user')}</span><span><strong>${esc(displayName(s))}</strong><small>${rec.segments.filter(t=>t.speakerId===s.id).length} segments${s.confirmed===false?' · Unconfirmed':''}</small></span>${icon('pencil-simple')}</button>`).join('')}</div>`);
-  } else if (d.type === 'paragraph-menu') {
-    const choices = d.segments.map(segment => `<button type="button" class="speaker-list-row" data-action="segment-menu" data-id="${esc(rec.id)}" data-segment-id="${esc(segment.id)}"><span class="assignment-time">${formatTime(segment.start)}</span><span><small>${esc(segment.text)}</small></span>${icon('arrow-right')}</button>`).join('');
-    content=dialogFrame('Edit a passage', `<p class="dialog-lead">Choose a passage to edit its text or change its speaker.</p><div class="speaker-list segment-assignment-list">${choices}</div>`);
-  } else if (d.type === 'segment-menu') {
-    const segment=rec.segments.find(s=>s.id===d.segmentId);
-    content=dialogFrame('This segment',`<div class="segment-excerpt"><span>${formatTime(segment.start)} · ${esc(displayName(speakerById(rec,segment.speakerId)))}</span><p>${esc(segment.text)}</p></div><div class="action-menu"><button data-action="edit-segment" data-id="${esc(rec.id)}" data-segment-id="${esc(segment.id)}">${icon('pencil-simple')}Edit text</button><button data-action="reassign-segment" data-id="${esc(rec.id)}" data-segment-id="${esc(segment.id)}">${icon('user-switch')}Change this segment’s speaker</button><button data-action="seek-segment" data-id="${esc(rec.id)}" data-segment-id="${esc(segment.id)}">${icon('play')}Play from this moment</button></div>`);
-  } else if (d.type === 'edit-segment') {
-    const segment=rec.segments.find(s=>s.id===d.segmentId);
-    content=dialogFrame('Edit transcript text',`<form id="segment-form"><label class="field-label" for="segment-text">${formatTime(segment.start)} · ${esc(displayName(speakerById(rec,segment.speakerId)))}</label><textarea id="segment-text" name="text" rows="6" required>${esc(segment.text)}</textarea><p class="fine-print">Timing and speaker stay the same. Existing notes will be marked for review.</p><div class="form-error" role="alert" id="segment-error"></div><div class="dialog-footer inline-footer"><button type="button" class="button secondary" data-action="close-dialog">Cancel</button><button class="button primary" type="submit">Save text</button></div></form>`);
   } else if (d.type === 'rename') {
     content=dialogFrame('Rename recording',`<form id="rename-form"><label class="field-label" for="recording-title">Title</label><input id="recording-title" name="title" class="text-input" value="${esc(rec.title)}" maxlength="250" required><p class="fine-print">Original file: ${esc(rec.originalFilename)}</p><div class="dialog-footer inline-footer"><button type="button" class="button secondary" data-action="close-dialog">Cancel</button><button type="submit" class="button primary">Save title</button></div></form>`);
   } else if (d.type === 'recording-menu') {
@@ -584,9 +692,7 @@ function renderDialog() {
   }
   dialog.innerHTML=content;
   if (!dialog.open) dialog.showModal();
-  if (d.type === 'edit-segment') $('#segment-text',dialog)?.focus();
-  else if (previousType === 'paragraph-menu' && d.type === 'segment-menu') $('[data-action="edit-segment"]',dialog)?.focus();
-  else if (previousFocus) ($('#'+previousFocus,dialog) || (d.type==='upload' ? $('#add-more-uploads',dialog) : null))?.focus();
+  if (previousFocus) $('#'+previousFocus,dialog)?.focus();
 }
 
 function rememberUndo(message,recordingId) {
@@ -650,13 +756,20 @@ function chooseFiles(mode='upload', id=null) {
       closeDialog();
       if (!rec.segments.length) queueTranscription(rec,file);
       else { rec.status='ready';persist();render();notify('Audio reconnected.'); }
-    } else {
-      state.pendingFiles=[...state.pendingFiles,...input.files];
-      openDialog({type:'upload'});
-    }
+    } else receiveFiles([...input.files]);
   }, { once: true });
   document.body.append(input);
   input.click();
+}
+// Dropping a file is the whole request: transcription starts without a confirmation step.
+function receiveFiles(files) {
+  const mode=transcriptionMode();
+  if(mode.configured===false){notify(mode.configurationError);return;}
+  const fits=file=>!Number.isFinite(mode.maxUploadBytes) || file.size<=mode.maxUploadBytes;
+  const accepted=files.filter(fits),skipped=files.filter(file=>!fits(file));
+  if(!accepted.length){notify((skipped.length===1?skipped[0].name+' is':'These files are')+` over the ${mode.uploadLimit} limit. Try a shorter or compressed copy.`);return;}
+  state.pendingFiles=accepted;addPendingFiles();
+  if(skipped.length)notify(skipped.length+' file'+(skipped.length===1?'':'s')+` over ${mode.uploadLimit} ${skipped.length===1?'was':'were'} skipped.`);
 }
 function audioMetadata(url) {
   return new Promise(resolve=>{
@@ -672,7 +785,7 @@ function refreshTranscriptionViews(rec, rebuild=false) {
   if (!recordById(rec.id)) return;
   if (rebuild) {
     if (route().view==='library') refreshList();
-    else if (route().id===rec.id) render();
+    else if (route().id===rec.id || route().view==='upload') render();
     return;
   }
   const current=status(rec);
@@ -816,13 +929,14 @@ function addPendingFiles() {
   closeDialog();state.pendingFiles=[];
   const batchId='local-'+uid(),uploadedAt=new Date().toISOString();
   const added=files.map(file=>({id:'local-'+uid(),title:file.name.replace(/\.[^.]+$/,'')||file.name,originalFilename:file.name,batchId,uploadedAt,duration:0,source:'local-upload',status:'queued',audioUrl:URL.createObjectURL(file),size:file.size,speakers:[],segments:[],notes:{summary:[],actions:[],decisions:[]},qa:[]}));
-  state.recordings.unshift(...added);state.search='';state.expandedId=added[0].id;state.libraryScroll=0;
-  navigate();render();
+  state.recordings.unshift(...added);state.search='';state.libraryScroll=0;
+  // One file opens straight into its transcript; a batch lands in the library.
+  navigate(added.length===1?added[0].id:null);render();
   added.forEach((rec,index)=>{
     localFiles.set(rec.id,files[index]);queueTranscription(rec,files[index]);
     audioMetadata(rec.audioUrl).then(result=>{if(recordById(rec.id)===rec && result.duration){rec.duration=result.duration;persist();refreshTranscriptionViews(rec,true);}});
   });
-  notify(files.length+' recording'+(files.length===1?'':'s')+' queued for transcription.');
+  if(files.length>1)notify(files.length+' recordings queued for transcription.');
 }
 function parseTimestamp(value) {
   const parts=value.trim().replace(',','.').split(':').map(Number);
@@ -932,16 +1046,19 @@ function returnToSegment(rec,segmentId,play=true) {
   requestAnimationFrame(()=>{const el=$('[data-segment="'+CSS.escape(segmentId)+'"]');el?.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth',block:'center'});el?.classList.add('citation-target');setTimeout(()=>el?.classList.remove('citation-target'),1800);});
 }
 function followPlayback(rec) {
+  state.follow = true; state.followedSegment = null;
   if (state.audioId !== rec.id) { notify('Start playback to follow the current moment.'); return; }
-  const segment = rec.segments.find(segmentAtPlaybackTime);
-  if (!segment) { notify('There is no transcript passage at this moment.'); return; }
+  // Between two sentences, fall back to the one that was just spoken.
+  const segment = rec.segments.find(segmentAtPlaybackTime) || rec.segments.findLast(s => Number.isFinite(s.start) && s.start <= audio.currentTime);
+  if (!segment) return;
   const selector = `#segment-${CSS.escape(segment.id)}`;
   if (!$(selector) && state.transcriptSearch) {
     state.transcriptSearch = '';
     $('#transcript-search').value = '';
     $('#transcript-turns').innerHTML = transcriptParagraphsMarkup(rec);
-    updatePlayers();
+    syncSearch();
   }
+  updatePlayers();
   $(selector)?.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth',block:'center'});
 }
 
@@ -958,6 +1075,15 @@ document.addEventListener('click',async event=>{
     navigate(card.dataset.recordingCard);return;
   }
   if (event.target.closest('.upload-dropzone') && !event.target.closest('button,a,input')) { chooseFiles(); return; }
+  const passage=event.target.closest('.transcript-passage');
+  if(passage && !event.target.closest('.is-editing') && !window.getSelection()?.toString()) {
+    // Any sentence is a play button: click the words to hear them.
+    const rec=recordById(passage.dataset.recording),segment=rec?.segments.find(s=>String(s.id)===passage.dataset.segment);
+    $$('.transcript-paragraph.is-selected').forEach(el=>el.classList.remove('is-selected'));
+    passage.closest('.transcript-paragraph')?.classList.add('is-selected');
+    if(Number.isFinite(segment?.start)){state.follow=true;state.followedSegment=segment.id;seekTo(rec,segment.start,true);}
+    return;
+  }
   const target=event.target.closest('[data-action]');if(!target)return;
   const action=target.dataset.action;const rec=recordById(target.dataset.id || state.dialog?.recordingId);
   event.preventDefault();
@@ -968,26 +1094,22 @@ document.addEventListener('click',async event=>{
   if(action==='search'){state.showSearch=true;render();$('#library-search')?.focus();return;}
   if(action==='close-search'||action==='clear-search'){state.search='';state.showSearch=false;render();return;}
   if(action==='info'){openDialog({type:'info'});return;}
-  if(action==='choose-upload'||action==='add-more-files'){chooseFiles();return;}
+  if(action==='choose-upload'){chooseFiles();return;}
   if(action==='close-dialog'){closeDialog();return;}
-  if(action==='remove-pending'){state.pendingFiles.splice(Number(target.dataset.index),1);renderDialog();return;}
-  if(action==='confirm-upload'){addPendingFiles();return;}
-  if(action==='preview'){state.expandedId=state.expandedId===rec.id?null:rec.id;refreshList();return;}
   if(action==='batch'){const id=target.dataset.batchId;if(state.collapsedBatches.has(id))state.collapsedBatches.delete(id);else state.collapsedBatches.add(id);refreshList();return;}
-  if(action==='play'){toggleAudio(rec);return;}
+  if(action==='play'){state.follow=true;toggleAudio(rec);return;}
+  if(action==='skip'){seekTo(rec,(state.audioId===rec.id?audio.currentTime:0)+Number(target.dataset.delta),false);return;}
+  if(action==='copy-transcript'){copyText(transcriptText(rec),'Transcript copied.');return;}
+  if(action==='copy-paragraph'){const paragraph=paragraphById(rec,target.dataset.paragraphId);if(paragraph)copyText(paragraph.text,'Paragraph copied.');return;}
+  if(action==='edit-paragraph'){startParagraphEdit(target.closest('.transcript-paragraph'));return;}
+  if(action==='save-edit'||action==='cancel-edit'){finishParagraphEdit(action==='save-edit');return;}
+  if(action==='search-step'){state.searchIndex+=Number(target.dataset.step);syncSearch(true);return;}
+  if(action==='speaker' && target.dataset.paragraphId){const paragraph=paragraphById(rec,target.dataset.paragraphId);if(paragraph)openDialog({type:'speaker',recordingId:rec.id,speakerId:paragraph.speakerId,segmentId:paragraph.segments[0].id,segmentIds:paragraph.segments.map(s=>s.id),scope:'segment'});return;}
   if(action==='speaker'){openDialog({type:'speaker',recordingId:rec.id,speakerId:target.dataset.speakerId,segmentId:target.dataset.segmentId,scope:target.dataset.scope || (target.dataset.speakerId === 'unassigned' && target.dataset.segmentId ? 'segment' : 'speaker')});return;}
   if(action==='manage-speakers'){openDialog({type:'speakers',recordingId:rec.id});return;}
-  if(action==='paragraph-menu'){
-    const paragraph=groupTranscriptParagraphs(rec.segments).find(group=>String(group.id)===target.dataset.paragraphId);
-    if(paragraph)openDialog({type:'paragraph-menu',recordingId:rec.id,segments:paragraph.segments});
-    return;
-  }
-  if(action==='segment-menu'){openDialog({type:'segment-menu',recordingId:rec.id,segmentId:target.dataset.segmentId});return;}
-  if(action==='edit-segment'){openDialog({type:'edit-segment',recordingId:rec.id,segmentId:target.dataset.segmentId});return;}
-  if(action==='reassign-segment'){const segment=rec.segments.find(s=>s.id===target.dataset.segmentId);openDialog({type:'speaker',recordingId:rec.id,speakerId:segment.speakerId,segmentId:segment.id,scope:'segment'});return;}
   if(action==='choose-name'||action==='use-suggested'){$('#speaker-name').value=target.dataset.name;$('#speaker-name').focus();return;}
   if(action==='reject-suggested'){const s=speakerById(rec,state.dialog.speakerId);delete s.suggestedName;persist();renderDialog();notify('Suggestion dismissed. Choose the right name.');return;}
-  if(action==='seek-segment'){const segment=rec?.segments.find(s=>s.id===target.dataset.segmentId);if(Number.isFinite(segment?.start)){if(state.dialog)closeDialog();seekTo(rec,segment.start,true);}return;}
+  if(action==='seek-segment'){const segment=rec?.segments.find(s=>s.id===target.dataset.segmentId);if(Number.isFinite(segment?.start)){if(state.dialog)closeDialog();state.follow=true;seekTo(rec,segment.start,true);}return;}
   if(action==='cite'){returnToSegment(rec,target.dataset.segmentId,true);return;}
   if(action==='follow'){followPlayback(rec);return;}
   if(action==='tab'){state.detailTab=target.dataset.tab;state.answer=null;render();$('#tab-'+state.detailTab)?.focus({preventScroll:true});return;}
@@ -1005,7 +1127,7 @@ document.addEventListener('click',async event=>{
   if(action==='reset'){
     if(!await cancelAllTranscriptions()){closeDialog();notify('Cloud cancellation is still pending. Keep this library and reset after confirmation.');return;}localFiles.clear();
     clearAudio();state.recordings.forEach(r=>{if(r.audioUrl?.startsWith('blob:'))URL.revokeObjectURL(r.audioUrl);});
-    state.recordings=clone(state.seed);state.knownSpeakers=[];state.processing={};state.expandedId=state.recordings[0]?.id;state.search='';state.libraryScroll=0;state.collapsedBatches.clear();persist();closeDialog();navigate();notify('Demo restored.');return;
+    state.recordings=clone(state.seed);state.knownSpeakers=[];state.processing={};state.search='';state.libraryScroll=0;state.collapsedBatches.clear();persist();closeDialog();navigate();notify('Demo restored.');return;
   }
   if(action==='confirm-remove'){openDialog({type:'confirm-remove',recordingId:rec.id});return;}
   if(action==='remove-recording'){
@@ -1016,8 +1138,8 @@ document.addEventListener('click',async event=>{
 document.addEventListener('input',event=>{
   if(event.target.id==='library-search'){state.search=event.target.value;refreshList();}
   if(event.target.id==='transcript-search'){
-    const rec=currentRec();state.transcriptSearch=event.target.value;
-    $('#transcript-turns').innerHTML=transcriptParagraphsMarkup(rec);updatePlayers();
+    const rec=currentRec();state.transcriptSearch=event.target.value;state.searchIndex=0;
+    $('#transcript-turns').innerHTML=transcriptParagraphsMarkup(rec);updatePlayers();syncSearch(true);
   }
   if(event.target.matches('[data-seek]'))seekTo(recordById(event.target.dataset.seek),Number(event.target.value),false);
 });
@@ -1036,9 +1158,9 @@ document.addEventListener('submit',event=>{
     rememberUndo('Speaker updated',rec.id);
     const speaker=speakerById(rec,d.speakerId);
     if(data.get('scope')==='segment'&&d.segmentId){
-      const segment=rec.segments.find(s=>s.id===d.segmentId);let assigned=rec.speakers.find(s=>displayName(s).toLowerCase()===name.toLowerCase());
+      const ids=d.segmentIds || [d.segmentId];let assigned=rec.speakers.find(s=>displayName(s).toLowerCase()===name.toLowerCase());
       if(!assigned){assigned={id:'speaker-'+uid(),name,confirmed:true};rec.speakers.push(assigned);}
-      segment.speakerId=assigned.id;
+      rec.segments.filter(s=>ids.includes(s.id)).forEach(s=>{s.speakerId=assigned.id;});
     }else if(speaker.id === 'unassigned'){
       let assigned=rec.speakers.find(s=>s.id !== 'unassigned' && displayName(s).toLowerCase()===name.toLowerCase());
       if(!assigned){assigned={id:'speaker-'+uid(),name,confirmed:true};rec.speakers.push(assigned);}
@@ -1047,22 +1169,31 @@ document.addEventListener('submit',event=>{
     if(data.get('saveName')&&!state.knownSpeakers.some(s=>s.name.toLowerCase()===name.toLowerCase()))state.knownSpeakers.push({id:uid(),name});
     rec.notesStale=true;state.answer=null;persist();closeDialog();render();notify('Speaker updated in this recording.','undo');return;
   }
-  if(event.target.id==='segment-form'){
-    event.preventDefault();const text=String(new FormData(event.target).get('text')||'').trim(),d=state.dialog,rec=recordById(d.recordingId);
-    if(!text){$('#segment-error').textContent='Transcript text cannot be empty.';return;}
-    rememberUndo('Text updated',rec.id);rec.segments.find(s=>s.id===d.segmentId).text=text;rec.notesStale=true;state.answer=null;persist();closeDialog();render();notify('Transcript text saved.','undo');return;
-  }
   if(event.target.id==='rename-form'){
     event.preventDefault();const title=String(new FormData(event.target).get('title')||'').trim(),rec=recordById(state.dialog.recordingId);if(!title)return;
     rememberUndo('Title updated',rec.id);rec.title=title;persist();closeDialog();render();notify('Recording renamed.','undo');return;
   }
 });
 document.addEventListener('keydown',event=>{
+  if(event.target.closest?.('.transcript-paragraph.is-editing')){
+    if(event.key==='Escape'){event.preventDefault();finishParagraphEdit(false);}
+    else if(event.key==='Enter'&&!event.isComposing){event.preventDefault();finishParagraphEdit(true);}
+    return;
+  }
+  if(event.target.id==='transcript-search'){
+    if(event.key==='Enter'){event.preventDefault();state.searchIndex+=event.shiftKey?-1:1;syncSearch(true);}
+    else if(event.key==='Escape'&&state.transcriptSearch){event.preventDefault();event.target.value='';event.target.dispatchEvent(new Event('input',{bubbles:true}));}
+    return;
+  }
   if(event.key==='Escape'&&!state.dialog&&state.showSearch){state.showSearch=false;state.search='';render();}
   const input=event.target.closest('input,textarea,select,button,a,[contenteditable],dialog');
   if(!input&&!state.dialog&&event.key==='/'){event.preventDefault();if(route().view==='library'){state.showSearch=true;render();$('#library-search')?.focus();}else $('#transcript-search')?.focus();}
-  if(!input&&!state.dialog&&event.code==='Space'&&route().view!=='upload'){const rec=currentRec()||recordById(state.expandedId);if(rec){event.preventDefault();toggleAudio(rec);}}
+  if(!input&&!state.dialog&&event.code==='Space'&&route().view!=='upload'){const rec=currentRec();if(rec){event.preventDefault();state.follow=true;toggleAudio(rec);}}
+  if(!input&&!state.dialog&&['ArrowLeft','ArrowRight'].includes(event.key)&&!event.metaKey&&!event.ctrlKey&&!event.altKey&&route().view==='detail'){const rec=currentRec();if(rec?.audioUrl&&state.audioId===rec.id){event.preventDefault();seekTo(rec,audio.currentTime+(event.key==='ArrowLeft'?-5:5),false);}}
+  if(!input&&['PageUp','PageDown','Home','End','ArrowUp','ArrowDown'].includes(event.key))pauseFollowing();
 });
+window.addEventListener('wheel',pauseFollowing,{passive:true});
+window.addEventListener('touchmove',pauseFollowing,{passive:true});
 document.addEventListener('dragenter',event=>{if(event.dataTransfer?.types.includes('Files')){event.preventDefault();state.dragDepth++;document.body.classList.add('drag-over');}});
 document.addEventListener('dragover',event=>{if(event.dataTransfer?.types.includes('Files'))event.preventDefault();});
 document.addEventListener('dragleave',()=>{state.dragDepth=Math.max(0,state.dragDepth-1);if(!state.dragDepth)document.body.classList.remove('drag-over');});
@@ -1072,7 +1203,7 @@ document.addEventListener('drop',event=>{
   if(mode.engine==='deepgram' && !mode.configured){notify(mode.configurationError);return;}
   const files=[...event.dataTransfer.files].filter(f=>f.type.startsWith('audio/')||f.type.startsWith('video/')||/\.(m4a|mp3|wav|aac|aiff?|ogg|flac|mp4|mov|webm)$/i.test(f.name));
   if(!files.length){notify('Drop audio or video files to add a recording.');return;}
-  state.pendingFiles=files;openDialog({type:'upload'});
+  receiveFiles(files);
 });
 window.addEventListener('scroll',()=>{if(state.lastView==='library'&&route().view==='library')state.libraryScroll=window.scrollY;},{passive:true});
 window.addEventListener('hashchange',()=>{const next=route();state.transcriptSearch='';state.detailTab='transcript';state.answer=null;render();window.scrollTo({top:next.view==='library'?state.libraryScroll:0,behavior:'instant'});});

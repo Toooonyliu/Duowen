@@ -173,7 +173,7 @@ test('upload starts real transcription automatically and the card surface opens 
 
   const recording = app.state.recordings[0];
   assert.equal(app.state.recordings.length, 1);
-  assert.equal(harness.navigation[0], undefined, 'Upload immediately enters the library.');
+  assert.equal(harness.navigation[0], recording.id, 'A single upload opens straight into its recording.');
   assert.equal(harness.requests.length, 1, 'Uploading must invoke the actual processing queue.');
   assert.equal(harness.requests[0].kind, 'upload');
   assert.equal(harness.requests[0].file, file);

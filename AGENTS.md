@@ -2,7 +2,15 @@
 
 ## Product decisions
 
-The visual source is `design/reference-library.png`; colors and component rules are in `design/visual-spec.json`. Preserve the user's minimal Apple-inspired frosted recording modules, icon-led familiar actions, readable filenames/times/statuses, and consistent library/detail surfaces. Browser QA must include timestamp seeking, speaker correction, file upload and narrow screens.
+The user asked (2026-11) for the interaction and reading experience to follow the calm, low-friction feel of Wispr Flow. That direction now leads; `design/reference-library.png` and `design/visual-spec.json` describe the earlier mineral/petrol look and remain only as the source of the petrol accent. Current rules:
+
+- **Surface:** warm paper canvas, flat near-white surfaces, one serif display voice (`--display`) for titles, pill buttons, text-labelled navigation (Duowen · New · Library). No frosted glass, no icon-only primary actions.
+- **Flow:** dropping or choosing a file starts transcription immediately with no confirmation dialog. One file opens straight into its recording; a batch lands in the Library. Home lists recent recordings under the dropzone.
+- **Transcript:** reads like a document. The speaker is named once per turn with a stable per-speaker color; every paragraph keeps a quiet timestamp in the left gutter; body text is 17px/1.75 at a 66ch measure. Each sentence is clickable and plays from its exact timestamp. Copy, edit and change-speaker appear on paragraph hover or after tapping the paragraph; text is edited inline (Enter saves, Esc cancels), never in a modal, and every sentence keeps its own timing.
+- **Listening:** the player is docked to the bottom of the viewport. While audio plays the spoken sentence is highlighted and kept in view; manual scrolling pauses following and shows "Back to current line". Space, ←/→ and / are the keyboard shortcuts.
+- **Search:** find-in-transcript highlights matches in place with a count and Enter / Shift+Enter navigation. It never hides the surrounding conversation.
+
+Browser QA must include timestamp seeking, speaker correction, inline text editing, file upload and narrow screens.
 
 The three main routes are Upload (default entry), Library (upload batches and processing/history), and a single recording's transcript detail. Use the user's selected Studio Brainstorming excerpt as the real bundled sample, with provenance and unverified local ASR clearly identified. New uploads use the real WhisperX backend; the frontend requires its public URL. Show genuine queued/processing/completed/failed states, and retain task ownership until remote cancellation is confirmed. The whole card's noninteractive area opens the recording. Subtitle import is optional. Cross-recording voice matching and model-backed notes/questions remain future work. Exports include real PDF, Markdown, TXT and Word DOCX, plus subtitle/JSON options.
 
