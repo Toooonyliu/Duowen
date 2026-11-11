@@ -4,6 +4,10 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist/client",
   "installCommand": "npm ci",
+  "functions": {
+    "api/deepgram.js": { "maxDuration": 300, "supportsCancellation": true }
+  },
+  "crons": [{ "path": "/api/deepgram?cleanup=1", "schedule": "0 9 * * *" }],
   "headers": [
     {
       "source": "/(.*)",

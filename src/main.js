@@ -1,7 +1,8 @@
 import '@phosphor-icons/web/regular';
 import './styles.css';
 import { exportRecording } from './export-client.js';
-import { transcribeFile, resumeTranscription, cancelTranscriptionJob, getTranscriptionMode } from './transcription-client.js';
+import { transcribeFile, resumeTranscription, cancelTranscriptionJob, getTranscriptionMode, checkDeepgramAvailability } from './transcription-client.js';
+import { groupTranscriptParagraphs, transcriptSegmentSeparator } from './transcript-paragraphs.js';
 
 const STORAGE_KEY = 'fieldnote-demo-v1';
 const $ = (s, r = document) => r.querySelector(s);
@@ -26,10 +27,10 @@ audio.id = 'demo-audio';
 document.body.append(audio);
 const state = {
   recordings: [], seed: [], knownSpeakers: [], expandedId: null, search: '', showSearch: false,
-  detailTab: 'transcript', sideTab: 'notes', transcriptSearch: '', audioId: null, currentTime: 0,
+  detailTab: 'transcript', transcriptSearch: '', audioId: null, currentTime: 0,
   playing: false, rate: 1, dialog: null, answer: null, messages: {}, collapsedBatches: new Set(),
   undo: null, loading: true, dragDepth: 0, pendingFiles: [], pendingSeek: null, processing: {},
-  libraryScroll: 0, lastView: 'upload', seedSignature: '', exportingFormat: null
+  libraryScroll: 0, lastView: 'upload', seedSignature: '', exportingFormat: null, deepgramStatus: null
 };
 const localFiles = new Map();
 const transcriptionQueue = [];
@@ -37,7 +38,20 @@ const transcriptionJobs = new Map();
 let activeTranscription = null;
 const activeStages = new Set(['queued','uploading','model-loading','decoding','transcribing','aligning','diarizing','cancelling']);
 const icons = {ready:'check-circle', partial:'users', 'needs-audio':'link-break', queued:'clock', uploading:'upload-simple', 'model-loading':'circle-notch', decoding:'waveform', transcribing:'waveform', aligning:'crosshair', diarizing:'users', interrupted:'arrow-clockwise', cancelling:'circle-notch', 'cancellation-unconfirmed':'warning-circle', cancelled:'pause-circle', error:'warning-circle'};
-function transcriptionMode() { return getTranscriptionMode(); }
+function transcriptionMode() {
+  const mode = getTranscriptionMode();
+  if (mode.engine !== 'deepgram') return mode;
+  const status = state.deepgramStatus;
+  const maxUploadBytes = status?.maxUploadBytes ?? mode.maxUploadBytes;
+  return {
+    ...mode,
+    configured: status?.configured === true,
+    checking: status === null,
+    maxUploadBytes,
+    uploadLimit: `${maxUploadBytes / (1024 * 1024)} MiB`,
+    configurationError: status === null ? 'Checking whether Deepgram is available.' : 'Deepgram is unavailable. Reload the page to check again.',
+  };
+}
 function isTranscribing(rec) { return Boolean(state.processing[rec.id]) || activeStages.has(rec.status); }
 function elapsedLabel(startedAt) { return startedAt ? formatTime(Math.max(0,(Date.now()-startedAt)/1000)) + ' elapsed' : ''; }
 function progressLabel(current) {
@@ -99,7 +113,8 @@ function persist() {
         copy.needsAudio = true;
         if (isTranscribing(r) && !r.transcription?.job?.accessToken) {
           copy.status='interrupted';
-          copy.transcription={...copy.transcription,status:'interrupted',stage:'interrupted',error:'Transcription stopped when this page was closed or refreshed.'};
+          const error=r.transcription?.engine==='deepgram'?'The page closed before receiving a transcript. Retry with the original file.':'Transcription stopped when this page was closed or refreshed.';
+          copy.transcription={...copy.transcription,status:'interrupted',stage:'interrupted',error};
         }
       } else delete copy.audioUrl;
       if(copy.transcription)delete copy.transcription.cancelRequestInFlight;
@@ -133,6 +148,12 @@ function normalize(rec, index) {
 }
 async function init() {
   root.innerHTML = '<main class="shell loading-screen" aria-label="Loading demo"><span class="loading-ring"></span><span>Opening samples…</span></main>';
+  if (getTranscriptionMode().engine === 'deepgram') {
+    checkDeepgramAvailability().then(status => {
+      state.deepgramStatus = status;
+      if (!state.loading && route().view === 'upload') render();
+    });
+  }
   try {
     const payload = window.__DEMO_RECORDINGS__ || await fetch('./samples/sample-recordings.json').then(r => { if (!r.ok) throw new Error('Samples could not be loaded'); return r.json(); });
     const samples = Array.isArray(payload) ? payload : payload.recordings || [];
@@ -180,6 +201,7 @@ function status(rec) {
   }
   if (rec.transcription?.job?.accessToken && rec.transcription.cancelRequestedAt) return {key:rec.transcription.cancellationError?'cancellation-unconfirmed':'cancelling',label:rec.transcription.cancellationError?'Cancellation not confirmed':'Cancelling',detail:rec.transcription.cancellationError?'Retry cancellation or check status':'Waiting for WhisperX to stop'};
   if (rec.status === 'error') return {key:'error',label:'Transcription failed',detail:'Open to retry'};
+  if (rec.transcription?.stoppedWaiting) return {key:'cancelled',label:'Stopped waiting',detail:'Open to retry'};
   if (rec.status === 'cancelled') return {key:'cancelled',label:'Transcription cancelled',detail:'Open to resume'};
   if (rec.status === 'interrupted' || !rec.segments.length) return {key:'interrupted',label:'Transcription paused',detail:'Choose the audio to resume'};
   if (hasUnassignedSegments(rec)) return {key:'partial',label:'Transcript ready',detail:'Speakers unassigned'};
@@ -207,14 +229,13 @@ function player(rec, compact = false) {
     <label class="speed-select"><span class="sr-only">Playback speed</span><select data-speed="${esc(rec.id)}" aria-label="Playback speed">${[0.75,1,1.25,1.5,2].map(n => `<option value="${n}" ${state.rate === n ? 'selected' : ''}>${n}×</option>`).join('')}</select>${icon('caret-down')}</label>
   </div>`;
 }
-function segmentMarkup(rec, segment, preview = false) {
+function previewSegmentMarkup(rec, segment) {
   const speaker = speakerById(rec, segment.speakerId);
   const active = state.audioId === rec.id && segment.start !== null && audio.currentTime >= segment.start && audio.currentTime < (segment.end ?? Infinity);
   return `<article class="transcript-turn ${active ? 'is-current' : ''}" id="segment-${esc(segment.id)}" data-segment="${esc(segment.id)}" data-recording="${esc(rec.id)}">
     <button type="button" class="timecode" data-action="seek-segment" data-id="${esc(rec.id)}" data-segment-id="${esc(segment.id)}" ${segment.start === null ? 'disabled title="No timestamp in this imported text"' : 'aria-label="Play from ' + formatTime(segment.start) + '"'}>${formatTime(segment.start)}</button>
     <div class="turn-content"><button type="button" class="speaker-label" data-action="speaker" data-id="${esc(rec.id)}" data-speaker-id="${esc(speaker.id)}" data-segment-id="${esc(segment.id)}">${esc(displayName(speaker))}${icon('caret-down')}${speaker.confirmed === false && speaker.id !== 'unassigned' ? '<span class="unconfirmed">Unconfirmed</span>' : ''}</button>
     <p>${esc(segment.text)}</p></div>
-    ${preview ? '' : button('dots-three','Edit this transcript segment','segment-menu','data-id="' + esc(rec.id) + '" data-segment-id="' + esc(segment.id) + '"','turn-menu')}
   </article>`;
 }
 function recordingModule(rec) {
@@ -226,7 +247,7 @@ function recordingModule(rec) {
       ${button(expanded ? 'caret-up' : 'caret-right',expanded ? 'Collapse recording preview' : 'Preview recording','preview','data-id="' + esc(rec.id) + '"','preview-toggle')}
     </div>
     ${expanded ? `<div class="recording-preview">${player(rec,true)}
-      ${state.processing[rec.id] ? processingMarkup(rec) : rec.segments.length ? '<div class="preview-transcript">' + rec.segments.slice(0,2).map(s => segmentMarkup(rec,s,true)).join('') + '</div>' : missingTranscript(rec,true)}
+      ${state.processing[rec.id] ? processingMarkup(rec) : rec.segments.length ? '<div class="preview-transcript">' + rec.segments.slice(0,2).map(s => previewSegmentMarkup(rec,s)).join('') + '</div>' : missingTranscript(rec,true)}
       <div class="preview-footer">${button('arrows-out-simple','Open full recording','open','data-id="' + esc(rec.id) + '"','open-detail')}</div></div>` : ''}
   </article>`;
 }
@@ -245,19 +266,28 @@ function renderLibrary() {
   return `<main class="shell library-shell"><h1 class="sr-only">Library</h1>${toolbar()}<div class="library-context"><span>Library</span><span>${state.recordings.length} recording${state.recordings.length === 1 ? '' : 's'}</span></div><div id="recording-list">${libraryList()}</div><footer class="library-footer"><span>Interactive demo</span><span class="footer-dot">·</span><button type="button" class="quiet-link" data-action="info">About the recordings and local playback</button></footer></main>`;
 }
 function renderUpload() {
+  const mode = transcriptionMode();
   return `<main class="shell upload-shell">${toolbar('upload')}
     <section class="upload-entry" aria-labelledby="upload-title">
       <div class="entry-heading"><h1 id="upload-title">Add audio or video</h1><p>Choose recordings. Your transcript will be created automatically.</p></div>
-      ${transcriptionMode().configured===false ? '<div class="service-notice" role="status">'+icon('plug')+'<span><strong>Transcription is unavailable</strong><br>WhisperX service is not connected yet.</span></div>' : ''}
+      ${mode.configured===false ? '<div class="service-notice" role="status">'+icon('plug')+'<span><strong>'+(mode.checking ? 'Checking transcription service' : 'Transcription is unavailable')+'</strong><br>'+esc(mode.configurationError)+'</span></div>' : ''}
       <div class="upload-dropzone" id="upload-dropzone">
         <div class="upload-symbol">${icon('upload-simple')}</div>
         <h2>Drop your files here</h2>
         <p>One conversation, or a whole batch.</p>
-        <button type="button" class="button primary upload-choice" data-action="choose-upload">${icon('plus')}Choose audio or video</button>
-        <div class="upload-formats"><span>${icon('file-audio')}Audio</span><span>${icon('video')}Video</span><span class="formats-detail">MP3, M4A, WAV, MP4, MOV and more</span></div>
+        <button type="button" class="button primary upload-choice" data-action="choose-upload" ${mode.engine==='deepgram' && !mode.configured?'disabled':''}>${icon('plus')}Choose audio or video</button>
+        <div class="upload-formats"><span>${icon('file-audio')}Audio</span><span>${icon('video')}Video</span><span class="formats-detail">MP3, M4A, WAV, MP4, MOV and more${mode.uploadLimit && mode.configured ? ` · Up to ${mode.uploadLimit} per file` : ''}</span></div>
       </div>
       <div class="upload-next"><button type="button" class="text-button sample-library-link" data-action="go-library">View sample library${icon('arrow-up-right')}</button><span>Listen to a recording and explore its transcript.</span></div>
-      <p class="upload-privacy">${icon('lock-key')}${transcriptionMode().location === 'server' ? 'Audio is sent to the WhisperX service to create your transcript.' : 'Transcription runs on this device. Your audio stays in your browser.'}</p>
+      <p class="upload-privacy">${icon('lock-key')}${mode.configured ? `Audio and video are sent to ${esc(mode.label)} to create your transcript.` : 'Audio and video uploads are unavailable.'}</p>
+      ${mode.engine === 'deepgram' ? `<details class="transcription-providers">
+        <summary>Transcription providers and pricing</summary>
+        <div class="provider-options">
+          <div class="provider-option ${mode.configured?'is-selected':''}"><div><strong>Deepgram Nova-3</strong><span class="provider-badge">${mode.configured?'Active':mode.checking?'Checking':'Unavailable'}</span></div><p>Estimated US$0.0072 per audio minute for prerecorded multilingual transcription with speaker labels. Deepgram offers a one-time US$200 trial credit.</p></div>
+          <div class="provider-option"><div><strong>Hugging Face + WhisperX</strong><span class="provider-badge">Planned</span></div><p>Compute estimate of US$0.03 per hour, or US$21.90 for 730 hours. Available once configured.</p></div>
+        </div>
+        <p>Provider billing may vary. Visitors are not charged.</p>
+      </details>` : ''}
     </section>
   </main>`;
 }
@@ -266,8 +296,9 @@ function missingTranscript(rec, compact = false) {
   if(rec.transcription?.job?.accessToken && rec.transcription.cancelRequestedAt)return processingMarkup(rec);
   const current=status(rec), needsFile=!rec.transcription?.job?.accessToken && (rec.needsAudio || !localFiles.has(rec.id));
   const failed=rec.status==='error';
-  const heading=failed ? 'Transcription could not finish' : rec.status==='cancelled' ? 'Transcription cancelled' : 'Resume transcription';
-  const message=failed ? rec.transcription?.error || 'Please retry this recording or choose another audio format.' : needsFile ? 'Choose the original audio once to continue. A transcript file is not needed.' : 'Your audio is still available. Resume when you are ready.';
+  const deepgram=rec.transcription?.engine==='deepgram';
+  const heading=failed ? 'Transcription could not finish' : rec.transcription?.stoppedWaiting ? 'Stopped waiting for Deepgram' : rec.status==='cancelled' ? 'Transcription cancelled' : deepgram ? 'Retry transcription' : 'Resume transcription';
+  const message=failed ? rec.transcription?.error || 'Please retry this recording or choose another audio format.' : deepgram ? 'Deepgram results are only available while the request is open. Retry with the original file.' : needsFile ? 'Choose the original audio once to continue. A transcript file is not needed.' : 'Your audio is still available. Resume when you are ready.';
   return `<div class="missing-transcript ${compact?'is-compact':''}">${icon(failed?'warning-circle':needsFile?'link':'arrow-clockwise')}<div><h3>${heading}</h3><p>${esc(message)}</p><button type="button" class="button ${failed?'primary':'secondary'}" data-action="${needsFile?'reconnect':'retry-transcription'}" data-id="${esc(rec.id)}">${icon(needsFile?'file-audio':'arrow-clockwise')}${needsFile?'Choose original audio':'Retry transcription'}</button></div></div>`;
 }
 function processingVisual(rec) {
@@ -284,9 +315,11 @@ function processingMarkup(rec) {
 }
 function cancellationActions(rec) {
   const waiting=Boolean(rec.transcription?.cancelRequestedAt && rec.transcription?.job?.accessToken),requesting=Boolean(rec.transcription?.cancelRequestInFlight);
-  return `<button type="button" class="quiet-link" data-action="cancel-transcription" data-id="${esc(rec.id)}" ${requesting?'disabled':''}>${icon(requesting?'circle-notch':'x')}${requesting?'Requesting cancellation':waiting?'Retry cancellation':'Cancel transcription'}</button>${waiting?`<button type="button" class="quiet-link" data-action="retry-transcription" data-id="${esc(rec.id)}">${icon('arrow-clockwise')}Check status</button>`:''}`;
+  const stopWaiting=rec.transcription?.engine==='deepgram' && ['uploading','transcribing'].includes(rec.status);
+  return `<button type="button" class="quiet-link" data-action="cancel-transcription" data-id="${esc(rec.id)}" ${requesting?'disabled':''}>${icon(requesting?'circle-notch':'x')}${requesting?'Requesting cancellation':waiting?'Retry cancellation':stopWaiting?'Stop waiting':'Cancel transcription'}</button>${waiting?`<button type="button" class="quiet-link" data-action="retry-transcription" data-id="${esc(rec.id)}">${icon('arrow-clockwise')}Check status</button>`:''}`;
 }
 function cancellationRetention(rec) {
+  if (rec.transcription?.engine==='deepgram') return 'Keep this page open until the transcript is ready. If you stop waiting, Deepgram may still finish the request.';
   return rec.transcription?.job?.accessToken?'You can switch views or refresh. This cloud job will reconnect automatically.':'You can leave this view. Keep this page open until the audio finishes uploading.';
 }
 function notesMarkup(rec) {
@@ -316,13 +349,42 @@ function qaMarkup(rec) {
     <form class="ask-form" id="ask-form"><label class="sr-only" for="question-input">Ask about this recording</label><input id="question-input" name="question" placeholder="Ask about this recording…" autocomplete="off" required><button type="submit" class="icon-button primary" aria-label="Ask question" data-tooltip="Ask question">${icon('arrow-up')}</button></form>
     <p class="fine-print">Suggested questions use prepared, source-linked answers. Other questions search this transcript for relevant passages.</p></div>`;
 }
+function transcriptParagraphMarkup(rec, paragraph) {
+  const speaker = speakerById(rec, paragraph.speakerId);
+  const first = paragraph.segments[0];
+  const timestamp = formatTime(paragraph.start);
+  const singleSegment = paragraph.segments.length === 1;
+  const record = `data-id="${esc(rec.id)}"`;
+  const segment = `data-segment-id="${esc(first.id)}"`;
+  const passages = paragraph.segments.map((passage, index) => {
+    const text = String(passage.text ?? '');
+    const separator = index ? transcriptSegmentSeparator(String(paragraph.segments[index - 1].text ?? ''), text) : '';
+    return `${separator}<span class="transcript-passage" id="segment-${esc(passage.id)}" data-segment="${esc(passage.id)}" data-recording="${esc(rec.id)}">${esc(text.trim())}</span>`;
+  }).join('');
+
+  return `<article class="transcript-paragraph">
+    <header class="transcript-paragraph-heading">
+      <button type="button" class="speaker-label" data-action="speaker" ${record} ${segment} data-speaker-id="${esc(speaker.id)}">${esc(displayName(speaker))}${icon('caret-down')}</button>
+      <button type="button" class="timecode" data-action="seek-segment" ${record} ${segment} ${Number.isFinite(paragraph.start) ? `aria-label="Play from ${timestamp}"` : 'disabled title="No timestamp in this imported text"'}>${timestamp}</button>
+      ${button('dots-three', singleSegment ? 'Edit this transcript segment' : 'Edit segments in this paragraph', singleSegment ? 'segment-menu' : 'paragraph-menu', `${record} ${singleSegment ? segment : `data-paragraph-id="${esc(paragraph.id)}"`}`, 'quiet paragraph-menu')}
+    </header>
+    <p>${passages}</p>
+  </article>`;
+}
+function transcriptParagraphsMarkup(rec) {
+  const query = state.transcriptSearch.trim().toLowerCase();
+  const paragraphs = groupTranscriptParagraphs(rec.segments).filter(paragraph => {
+    if (!query) return true;
+    const speaker = displayName(speakerById(rec, paragraph.speakerId));
+    return `${paragraph.text} ${speaker}`.toLowerCase().includes(query);
+  });
+  return paragraphs.length ? paragraphs.map(paragraph => transcriptParagraphMarkup(rec, paragraph)).join('') : '<div class="panel-empty"><p>No matching passages.</p></div>';
+}
 function transcriptMarkup(rec) {
   if (state.processing[rec.id]) return processingMarkup(rec);
-  if (!rec.segments.length || rec.needsAudio && !rec.segments.length) return missingTranscript(rec);
-  const q = state.transcriptSearch.toLowerCase();
-  const segments = rec.segments.filter(s => !q || (s.text + ' ' + displayName(speakerById(rec,s.speakerId))).toLowerCase().includes(q));
+  if (!rec.segments.length) return missingTranscript(rec);
   return `<div class="transcript-tools"><div class="transcript-search">${icon('magnifying-glass')}<input id="transcript-search" type="search" placeholder="Find in transcript" aria-label="Find in transcript" value="${esc(state.transcriptSearch)}"></div><button class="quiet-link follow-playback" aria-label="Go to current playback moment" data-action="follow" data-id="${esc(rec.id)}">${icon('crosshair')}<span>Current moment</span></button></div>
-    <div class="transcript-reading" id="transcript-turns">${segments.length ? segments.map(s => segmentMarkup(rec,s)).join('') : '<div class="panel-empty"><p>No matching passages.</p></div>'}</div>`;
+    <div class="transcript-reading" id="transcript-turns">${transcriptParagraphsMarkup(rec)}</div>`;
 }
 function renderDetail(rec) {
   const statusText = status(rec);
@@ -334,8 +396,8 @@ function renderDetail(rec) {
       <div class="detail-player-wrap">${player(rec)}</div>
       <nav class="workspace-tabs" aria-label="Recording workspace"><div class="main-tabs" role="tablist">${[{id:'transcript',icon:'text-align-left',label:'Transcript'},{id:'notes',icon:'note-pencil',label:'Notes'},{id:'ask',icon:'chat-circle-text',label:'Ask'}].map(t => `<button id="tab-${t.id}" type="button" role="tab" aria-selected="${state.detailTab === t.id}" aria-controls="workspace-panel" class="workspace-tab ${state.detailTab === t.id ? 'active' : ''}" data-action="tab" data-tab="${t.id}">${icon(t.icon)}${t.label}</button>`).join('')}</div>
       ${rec.segments.length ? '<button type="button" class="quiet-link speaker-manager" aria-label="' + esc(speakerManagerLabel(rec)) + '" data-action="manage-speakers" data-id="' + esc(rec.id) + '">' + icon('users') + '<span>' + speakerManagerLabel(rec) + '</span></button>' : ''}</nav>
-      <div class="workspace-body ${state.detailTab === 'transcript' ? 'split-workspace' : ''}" id="workspace-panel" role="tabpanel" aria-labelledby="tab-${state.detailTab}">
-      ${state.detailTab === 'transcript' ? '<section class="transcript-panel" aria-label="Transcript">' + transcriptMarkup(rec) + '</section><aside class="insight-panel"><div class="insight-tabs"><button class="' + (state.sideTab === 'notes' ? 'active' : '') + '" data-action="side-tab" data-tab="notes">' + icon('note-pencil') + 'Notes</button><button class="' + (state.sideTab === 'ask' ? 'active' : '') + '" data-action="side-tab" data-tab="ask">' + icon('chat-circle-text') + 'Ask</button></div>' + (state.sideTab === 'notes' ? notesMarkup(rec) : qaMarkup(rec)) + '</aside>' : '<section class="wide-panel">' + (state.detailTab === 'notes' ? notesMarkup(rec) : qaMarkup(rec)) + '</section>'}
+      <div class="workspace-body" id="workspace-panel" role="tabpanel" aria-labelledby="tab-${state.detailTab}">
+      ${state.detailTab === 'transcript' ? '<section class="transcript-panel" aria-label="Transcript">' + transcriptMarkup(rec) + '</section>' : '<section class="wide-panel">' + (state.detailTab === 'notes' ? notesMarkup(rec) : qaMarkup(rec)) + '</section>'}
       </div>
     </section>
     <footer class="detail-footer"><span>${rec.source === 'synthetic-demo' ? 'Synthetic speech · authored transcript' : rec.source === 'local-upload' ? rec.needsAudio && rec.segments.length ? 'Transcript saved · reconnect audio for playback' : rec.segments.length ? 'Automatic transcript · review against the audio' : 'Audio selected · automatic transcription' : isAsrDraft(rec) ? 'Unreviewed ASR draft · check the audio when accuracy matters' : 'Sample recording · timestamped transcript'}</span><button class="quiet-link" data-action="info">About this demo</button></footer>
@@ -384,6 +446,9 @@ function seekTo(rec, time, play = false) {
   if (play) audio.play().catch(() => notify('Press play to start this audio.'));
   updatePlayers();
 }
+function segmentAtPlaybackTime(segment) {
+  return Number.isFinite(segment.start) && audio.currentTime >= segment.start && audio.currentTime < (segment.end ?? Infinity);
+}
 function updatePlayers() {
   $$('[data-player]').forEach(el => {
     const rec = recordById(el.dataset.player);
@@ -403,11 +468,11 @@ function updatePlayers() {
     const time = $('[data-time]',el);
     if (time) time.textContent = formatTime(now) + ' / ' + formatTime(rec.duration);
   });
+  const playingRecord = recordById(state.audioId);
+  const currentPassages = new Set(playingRecord?.segments.filter(segmentAtPlaybackTime).map(segment => String(segment.id)));
   $$('[data-segment]').forEach(el => {
-    const rec = recordById(el.dataset.recording);
-    const segment = rec?.segments.find(s => s.id === el.dataset.segment);
-    const current = state.audioId === rec?.id && segment?.start !== null && audio.currentTime >= segment?.start && audio.currentTime < (segment?.end ?? Infinity);
-    el.classList.toggle('is-current',Boolean(current));
+    const current = el.dataset.recording === playingRecord?.id && currentPassages.has(el.dataset.segment);
+    el.classList.toggle('is-current', current);
     if (current) el.setAttribute('aria-current','true'); else el.removeAttribute('aria-current');
   });
 }
@@ -423,8 +488,16 @@ audio.addEventListener('loadedmetadata', () => {
 });
 audio.addEventListener('error', () => { if (audio.getAttribute('src')) notify('Audio could not be loaded. Reconnect it or choose another format.'); });
 
-function openDialog(config) { state.dialog = config; renderDialog(); }
+function clearPreparedPdf() {
+  if (state.dialog?.preparedPdf) URL.revokeObjectURL(state.dialog.preparedPdf.url);
+}
+function openDialog(config) {
+  clearPreparedPdf();
+  state.dialog = config;
+  renderDialog();
+}
 function closeDialog() {
+  clearPreparedPdf();
   state.dialog = null;
   const dialog = $('#demo-dialog');
   if (dialog) { dialog.close(); dialog.remove(); }
@@ -434,6 +507,7 @@ function dialogFrame(title, body, footer = '') {
 }
 function renderDialog() {
   let dialog = $('#demo-dialog');
+  const previousType = dialog?.dataset.dialogType;
   const previousFocus = dialog?.contains(document.activeElement) ? document.activeElement?.id : null;
   if (!dialog) {
     dialog = document.createElement('dialog'); dialog.id='demo-dialog'; dialog.className='demo-dialog'; dialog.setAttribute('aria-labelledby','dialog-title');
@@ -442,18 +516,33 @@ function renderDialog() {
     document.body.append(dialog);
   }
   const d=state.dialog, rec=recordById(d.recordingId);
+  dialog.dataset.dialogType = d.type;
+  if (d.type === 'upload') dialog.setAttribute('aria-describedby','upload-confirmation-note');
+  else dialog.removeAttribute('aria-describedby');
   let content = '';
   if (d.type === 'info') {
+    const mode=transcriptionMode();
     const sample=currentRec() || state.seed.find(r=>r.source === 'user-recording');
     const provenance=sample?.provenance;
     const excerpt=sample ? excerptInfo(sample) : null;
     const excerptDescription=excerpt ? (excerpt.start===0 ? 'First '+Math.round(excerpt.duration)+' seconds of '+formatTime(excerpt.original)+' source recording.' : formatTime(excerpt.start)+'–'+formatTime(excerpt.end)+' excerpt of '+formatTime(excerpt.original)+' source recording.') : '';
     const sourceInfo=sample && isAsrDraft(sample) ? `<div class="notice source-notice">${icon('info')}<span><strong>${esc(sample.title)} · ASR draft</strong><br>${excerptDescription ? esc(excerptDescription)+'<br>' : ''}Uncorrected text with approximate segment timestamps. ${hasUnassignedSegments(sample) ? 'Speakers have not been separated; Unknown speaker is an unassigned bucket.' : 'Speaker names have been manually assigned.'}</span></div>${provenance ? '<details class="source-details"><summary>How this recording was prepared</summary><p>' + esc(provenance.transcript || '') + '</p><p>' + esc(provenance.timestamps || '') + '</p><p>' + esc(provenance.notesAndQa || '') + '</p></details>' : ''}` : '';
-    content=dialogFrame('About Duowen',`<p class="dialog-lead">Listen, find the moment, and make the transcript yours.</p>${sourceInfo}<div class="info-feature">${icon('waveform')}<div><h3>A sample library to explore</h3><p>Bundled recordings include timestamped transcripts, prepared notes and source-linked answers.</p></div></div><div class="info-feature">${icon('lock-key')}<div><h3>Audio & privacy</h3><p>${transcriptionMode().location==='server'?'Audio is sent to the connected WhisperX service for transcription.':'Transcription runs on this device. Your audio is not uploaded.'} Your transcript and edits are saved in this browser.</p></div></div><div class="info-feature">${icon('sparkle')}<div><h3>Automatic, with clear feedback</h3><p>New recordings are transcribed automatically. Processing states reflect the actual job. Speaker separation is shown only when the service returns it; saved names do not perform voice matching.</p></div></div><p class="fine-print">Edits are saved in this browser. Local audio files need reconnecting after a refresh.</p>`,
+    content=dialogFrame('About Duowen',`<p class="dialog-lead">Listen, find the moment, and make the transcript yours.</p>${sourceInfo}<div class="info-feature">${icon('waveform')}<div><h3>A sample library to explore</h3><p>Bundled recordings include timestamped transcripts, prepared notes and source-linked answers.</p></div></div><div class="info-feature">${icon('lock-key')}<div><h3>Audio & privacy</h3><p>${mode.configured?`Audio and video are sent to ${esc(mode.label)} for transcription.`:'Audio and video uploads are unavailable.'} Your transcript and edits are saved in this browser.</p></div></div><div class="info-feature">${icon('sparkle')}<div><h3>Automatic, with clear feedback</h3><p>New recordings are transcribed automatically. Processing states reflect the actual job. Speaker separation is shown only when the service returns it; saved names do not perform voice matching.</p></div></div><p class="fine-print">Edits are saved in this browser. Local audio files need reconnecting after a refresh.</p>`,
       '<button class="quiet-link" data-action="confirm-reset">' + icon('arrow-counter-clockwise') + 'Reset demo</button><button class="button primary" data-action="close-dialog">Explore</button>');
   } else if (d.type === 'upload') {
-    content=dialogFrame('Add recordings',`<div class="upload-files">${state.pendingFiles.map((file,i) => `<div class="upload-file">${icon(file.type.startsWith('video/')?'video':'file-audio')}<div><strong>${esc(file.name)}</strong><span>${formatSize(file.size)}</span></div>${button('x','Remove ' + file.name,'remove-pending','data-index="' + i + '"','small')}</div>`).join('')}</div><div class="inline-note">${icon('waveform')}<span>${transcriptionMode().configured===false ? 'WhisperX service is not connected. Transcription cannot start yet.' : 'Transcription starts automatically. Track each recording in your library.'}</span></div>`,
-      '<button class="button secondary" data-action="add-more-files">Add more</button><button class="button primary" data-action="confirm-upload" ' + (!state.pendingFiles.length || transcriptionMode().configured===false ? 'disabled' : '') + '>Transcribe ' + state.pendingFiles.length + ' recording' + (state.pendingFiles.length!==1?'s':'') + '</button>');
+    const mode=transcriptionMode();
+    const oversized=state.pendingFiles.some(file=>file.size>mode.maxUploadBytes);
+    const note=!mode.configured?mode.configurationError:oversized?`Remove files over ${mode.uploadLimit} or add a shorter copy.`:`Files will be sent to ${mode.label} for transcription.`;
+    const files=state.pendingFiles.map((file,i)=>`<li class="upload-file">
+      ${icon(file.type.startsWith('video/')?'video':'file-audio')}
+      <div><strong>${esc(file.name)}</strong><span>${formatSize(file.size)}${file.size>mode.maxUploadBytes?` · Over ${mode.uploadLimit} limit`:''}</span></div>
+      ${button('x','Remove ' + file.name,'remove-pending',`id="remove-upload-${i}" data-index="${i}"`,'small')}
+    </li>`).join('');
+    const count=state.pendingFiles.length;
+    content=dialogFrame('Add recordings',`<p class="upload-confirmation-note" id="upload-confirmation-note">${esc(note)}</p>
+      ${count?`<ul class="upload-files" aria-label="Selected recordings">${files}</ul>`:'<p class="upload-empty">No files selected.</p>'}`,
+      `<button type="button" class="button secondary" data-action="add-more-files" id="add-more-uploads">${icon('plus')}Add files</button>
+      <button type="button" class="button primary" data-action="confirm-upload" ${!count || !mode.configured || oversized ? 'disabled' : ''}>${count?`Transcribe ${count} recording${count===1?'':'s'}`:'Transcribe'}</button>`);
   } else if (d.type === 'speaker') {
     const speaker=speakerById(rec,d.speakerId);
     content=dialogFrame('Edit speaker',`<form id="speaker-form"><label class="field-label" for="speaker-name">Display name</label><input class="text-input" id="speaker-name" name="name" required maxlength="100" value="${esc(displayName(speaker))}" autocomplete="off">
@@ -464,6 +553,9 @@ function renderDialog() {
       <div class="dialog-footer inline-footer"><button type="button" class="button secondary" data-action="close-dialog">Cancel</button><button type="submit" class="button primary">Save name</button></div></form>`);
   } else if (d.type === 'speakers') {
     content=hasUnassignedSegments(rec) ? dialogFrame('Assign speakers',`<p class="dialog-lead">Choose a passage to assign or correct its speaker.</p><div class="speaker-list segment-assignment-list">${rec.segments.map(s=>`<button class="speaker-list-row" data-action="speaker" data-id="${esc(rec.id)}" data-speaker-id="${esc(s.speakerId)}" data-segment-id="${esc(s.id)}" data-scope="segment"><span class="assignment-time">${formatTime(s.start)}</span><span><strong>${esc(displayName(speakerById(rec,s.speakerId)))}</strong><small>${esc(s.text)}</small></span>${icon('pencil-simple')}</button>`).join('')}</div>`) : dialogFrame('Speakers',`<p class="dialog-lead">Names belong to this recording. Change one without changing other files.</p><div class="speaker-list">${rec.speakers.filter(s=>rec.segments.some(t=>t.speakerId === s.id)).map(s=>`<button class="speaker-list-row" data-action="speaker" data-id="${esc(rec.id)}" data-speaker-id="${esc(s.id)}"><span class="speaker-avatar">${icon('user')}</span><span><strong>${esc(displayName(s))}</strong><small>${rec.segments.filter(t=>t.speakerId===s.id).length} segments${s.confirmed===false?' · Unconfirmed':''}</small></span>${icon('pencil-simple')}</button>`).join('')}</div>`);
+  } else if (d.type === 'paragraph-menu') {
+    const choices = d.segments.map(segment => `<button type="button" class="speaker-list-row" data-action="segment-menu" data-id="${esc(rec.id)}" data-segment-id="${esc(segment.id)}"><span class="assignment-time">${formatTime(segment.start)}</span><span><small>${esc(segment.text)}</small></span>${icon('arrow-right')}</button>`).join('');
+    content=dialogFrame('Edit a passage', `<p class="dialog-lead">Choose a passage to edit its text or change its speaker.</p><div class="speaker-list segment-assignment-list">${choices}</div>`);
   } else if (d.type === 'segment-menu') {
     const segment=rec.segments.find(s=>s.id===d.segmentId);
     content=dialogFrame('This segment',`<div class="segment-excerpt"><span>${formatTime(segment.start)} · ${esc(displayName(speakerById(rec,segment.speakerId)))}</span><p>${esc(segment.text)}</p></div><div class="action-menu"><button data-action="edit-segment" data-id="${esc(rec.id)}" data-segment-id="${esc(segment.id)}">${icon('pencil-simple')}Edit text</button><button data-action="reassign-segment" data-id="${esc(rec.id)}" data-segment-id="${esc(segment.id)}">${icon('user-switch')}Change this segment’s speaker</button><button data-action="seek-segment" data-id="${esc(rec.id)}" data-segment-id="${esc(segment.id)}">${icon('play')}Play from this moment</button></div>`);
@@ -474,6 +566,10 @@ function renderDialog() {
     content=dialogFrame('Rename recording',`<form id="rename-form"><label class="field-label" for="recording-title">Title</label><input id="recording-title" name="title" class="text-input" value="${esc(rec.title)}" maxlength="250" required><p class="fine-print">Original file: ${esc(rec.originalFilename)}</p><div class="dialog-footer inline-footer"><button type="button" class="button secondary" data-action="close-dialog">Cancel</button><button type="submit" class="button primary">Save title</button></div></form>`);
   } else if (d.type === 'recording-menu') {
     content=dialogFrame('Recording actions',`<div class="action-menu"><button data-action="rename-recording" data-id="${esc(rec.id)}">${icon('pencil-simple')}Rename</button><button data-action="import-transcript" data-id="${esc(rec.id)}" ${isTranscribing(rec)?'disabled':''}>${icon('file-text')}Import subtitle file (optional)</button><button data-action="reconnect" data-id="${esc(rec.id)}">${icon('link')}Reconnect audio</button><button data-action="export" data-id="${esc(rec.id)}">${icon('download-simple')}Export transcript</button><button class="danger-text" data-action="confirm-remove" data-id="${esc(rec.id)}">${icon('trash')}Remove from this library</button></div>`);
+  } else if (d.type === 'export' && d.preparedPdf) {
+    const { url, filename } = d.preparedPdf;
+    content=dialogFrame('Export transcript', '<p class="dialog-lead" role="status">Your PDF is ready to save.</p>',
+      `<a id="save-transcript-pdf" class="button primary" href="${esc(url)}" download="${esc(filename)}">${icon('download-simple')}Save PDF</a>`);
   } else if (d.type === 'export') {
     content=dialogFrame('Export transcript',`<p class="dialog-lead">Names and text include your latest changes.</p>${state.exportingFormat ? '<div class="export-progress" role="status">' + icon('circle-notch') + '<span>Preparing ' + esc(state.exportingFormat === 'docx' ? 'Word document' : state.exportingFormat.toUpperCase()) + '…</span></div>' : ''}<div class="export-options">${[{id:'pdf',label:'PDF',desc:'A clean, paginated transcript for reading or sharing',icon:'file-pdf'},{id:'docx',label:'Word (.docx)',desc:'An editable Word document with speakers and times',icon:'file-doc'},{id:'md',label:'Markdown',desc:'Structured text for your notes or knowledge base',icon:'file-md'},{id:'txt',label:'Plain text',desc:'Readable transcript with speakers and times',icon:'file-text'},{id:'srt',label:'SRT subtitles',desc:'Timestamped subtitles for video editors',icon:'subtitles'},{id:'vtt',label:'WebVTT',desc:'Timestamped captions for the web',icon:'closed-captioning'},{id:'json',label:'JSON',desc:'Segments, speakers, notes and file metadata',icon:'brackets-curly'}].map(o=>`<button data-action="download" data-format="${o.id}" data-id="${esc(rec.id)}" ${state.exportingFormat ? 'disabled' : ''}>${icon(o.icon)}<span><strong>${o.label}</strong><small>${o.desc}</small></span>${icon('download-simple')}</button>`).join('')}</div>`);
   } else if (d.type === 'reconnect') {
@@ -488,7 +584,9 @@ function renderDialog() {
   }
   dialog.innerHTML=content;
   if (!dialog.open) dialog.showModal();
-  if (previousFocus) $('#'+previousFocus,dialog)?.focus();
+  if (d.type === 'edit-segment') $('#segment-text',dialog)?.focus();
+  else if (previousType === 'paragraph-menu' && d.type === 'segment-menu') $('[data-action="edit-segment"]',dialog)?.focus();
+  else if (previousFocus) ($('#'+previousFocus,dialog) || (d.type==='upload' ? $('#add-more-uploads',dialog) : null))?.focus();
 }
 
 function rememberUndo(message,recordingId) {
@@ -531,8 +629,13 @@ function askQuestion(rec, query) {
   $('#question-input')?.focus();
 }
 function chooseFiles(mode='upload', id=null) {
+  const service=transcriptionMode();
+  if(mode==='upload' && service.engine==='deepgram' && !service.configured){notify(service.configurationError);return;}
   const input=document.createElement('input'); input.type='file'; input.accept='audio/*,video/*,.m4a,.mp3,.wav,.aac,.aiff,.ogg,.flac,.mp4,.mov,.webm'; input.multiple=mode==='upload';
+  input.hidden = true;
+  input.addEventListener('cancel', () => input.remove(), { once: true });
   input.addEventListener('change',async()=>{
+    input.remove();
     if (!input.files?.length) return;
     if (mode==='reconnect') {
       const rec=recordById(id); if (!rec) return;
@@ -551,7 +654,8 @@ function chooseFiles(mode='upload', id=null) {
       state.pendingFiles=[...state.pendingFiles,...input.files];
       openDialog({type:'upload'});
     }
-  });
+  }, { once: true });
+  document.body.append(input);
   input.click();
 }
 function audioMetadata(url) {
@@ -594,16 +698,17 @@ function refreshTranscriptionViews(rec, rebuild=false) {
   });
 }
 function queueTranscription(rec,file,{resumeJob=null}={}) {
-  if (transcriptionMode().configured===false) {
-    rec.status='error';rec.transcription={...rec.transcription,status:'error',error:'WhisperX service is not connected yet. Please try again when the service is available.'};
-    persist();refreshTranscriptionViews(rec,true);notify('WhisperX service is not connected yet.');return;
+  const mode=transcriptionMode();
+  if (!resumeJob && mode.configured===false) {
+    rec.status='error';rec.transcription={...rec.transcription,status:'error',error:mode.configurationError};
+    persist();refreshTranscriptionViews(rec,true);notify(mode.configurationError);return;
   }
   if (transcriptionJobs.has(rec.id)) return;
   const job={id:uid(),recordingId:rec.id,file,resumeJob,controller:new AbortController()};
   if(file)localFiles.set(rec.id,file);transcriptionJobs.set(rec.id,job);transcriptionQueue.push(job);
   const previous=rec.transcription;
   const cancelling=Boolean(resumeJob && previous?.cancelRequestedAt);
-  rec.status=cancelling?(previous.cancellationError?'cancellation-unconfirmed':'cancelling'):'queued';rec.transcription={status:rec.status,stage:rec.status,queuedAt:resumeJob && previous?.queuedAt || Date.now(),...(resumeJob?{job:resumeJob,startedAt:previous?.startedAt,...(cancelling?{cancelRequestedAt:previous.cancelRequestedAt,cancellationError:previous.cancellationError}:{})}:{})};
+  rec.status=cancelling?(previous.cancellationError?'cancellation-unconfirmed':'cancelling'):'queued';rec.transcription={status:rec.status,stage:rec.status,engine:resumeJob?'whisperx':mode.engine,queuedAt:resumeJob && previous?.queuedAt || Date.now(),...(resumeJob?{job:resumeJob,startedAt:previous?.startedAt,...(cancelling?{cancelRequestedAt:previous.cancelRequestedAt,cancellationError:previous.cancellationError}:{})}:{})};
   state.processing[rec.id]=cancelling?{key:rec.status,label:previous.cancellationError?'Cancellation not confirmed':'Cancelling',detail:previous.cancellationError || 'Checking the cloud job for confirmation.'}:{key:'queued',label:'Queued',detail:activeTranscription?'Waiting for the previous recording to finish.':'Preparing to start transcription.'};
   persist();refreshTranscriptionViews(rec,true);pumpTranscriptionQueue();
 }
@@ -665,16 +770,20 @@ async function pumpTranscriptionQueue() {
     pumpTranscriptionQueue();
   }
 }
-function confirmTranscriptionCancellation(rec) {
+function confirmTranscriptionCancellation(rec, stoppedWaiting=false) {
   const job=transcriptionJobs.get(rec.id);
   transcriptionJobs.delete(rec.id);job?.controller.abort();
   for(let i=transcriptionQueue.length-1;i>=0;i--)if(transcriptionQueue[i]===job)transcriptionQueue.splice(i,1);
-  rec.status='cancelled';rec.transcription={...rec.transcription,status:'cancelled',stage:'cancelled',cancelledAt:Date.now()};delete rec.transcription.job;delete rec.transcription.cancellationError;delete rec.transcription.cancelRequestInFlight;
-  delete state.processing[rec.id];persist();refreshTranscriptionViews(rec,true);notify('Transcription cancelled.');
+  rec.status='cancelled';rec.transcription={...rec.transcription,status:'cancelled',stage:'cancelled',cancelledAt:Date.now(),...(stoppedWaiting?{stoppedWaiting:true}:{})};delete rec.transcription.job;delete rec.transcription.cancellationError;delete rec.transcription.cancelRequestInFlight;
+  delete state.processing[rec.id];persist();refreshTranscriptionViews(rec,true);notify(stoppedWaiting?'Stopped waiting. Deepgram may still finish the request.':'Transcription cancelled.');
 }
 async function cancelTranscription(rec) {
   const remote=rec.transcription?.job;
-  if(!remote?.accessToken) {if(transcriptionJobs.has(rec.id))confirmTranscriptionCancellation(rec);return true;}
+  if(!remote?.accessToken) {
+    const job=transcriptionJobs.get(rec.id);
+    if(job)confirmTranscriptionCancellation(rec,rec.transcription?.engine==='deepgram' && activeTranscription===job);
+    return true;
+  }
   if(rec.transcription.cancelRequestInFlight)return false;
   rec.status='cancelling';rec.transcription={...rec.transcription,status:'cancelling',stage:'cancelling',cancelRequestedAt:rec.transcription.cancelRequestedAt || Date.now(),cancelRequestInFlight:true};delete rec.transcription.cancellationError;
   state.processing[rec.id]={key:'cancelling',label:'Cancelling',detail:'Sending the cancellation request to WhisperX.'};persist();refreshTranscriptionViews(rec,true);
@@ -701,7 +810,9 @@ async function cancelAllTranscriptions() {
 }
 function addPendingFiles() {
   const files=[...state.pendingFiles];if(!files.length)return;
-  if(transcriptionMode().configured===false){notify('WhisperX service is not connected yet.');return;}
+  const mode=transcriptionMode();
+  if(mode.configured===false){notify(mode.configurationError);return;}
+  if(files.some(file=>file.size>mode.maxUploadBytes)){notify(`Remove files over ${mode.uploadLimit} before transcribing.`);return;}
   closeDialog();state.pendingFiles=[];
   const batchId='local-'+uid(),uploadedAt=new Date().toISOString();
   const added=files.map(file=>({id:'local-'+uid(),title:file.name.replace(/\.[^.]+$/,'')||file.name,originalFilename:file.name,batchId,uploadedAt,duration:0,source:'local-upload',status:'queued',audioUrl:URL.createObjectURL(file),size:file.size,speakers:[],segments:[],notes:{summary:[],actions:[],decisions:[]},qa:[]}));
@@ -777,6 +888,7 @@ function importTranscript(id) {
 }
 async function downloadTranscript(rec,format) {
   if (state.exportingFormat) return;
+  const exportDialog = state.dialog;
   const timed=rec.segments.filter(s=>s.start!==null&&s.end!==null);
   if((format==='srt'||format==='vtt')&&!timed.length){notify('This text has no timestamps. Export as plain text or JSON.');return;}
   const stamp=(seconds,comma=false)=>{
@@ -793,6 +905,13 @@ async function downloadTranscript(rec,format) {
     const result = ['pdf','docx','md','txt'].includes(format) ? await exportRecording(rec,format,{
       speakerName:id=>displayName(speakerById(rec,id)),timeZone:'America/New_York',
     }) : {blob:new Blob([output],{type:type+';charset=utf-8'}),filename:(rec.title.replace(/[<>:"/\\|?*]/g,'_')||'transcript')+'.'+format};
+    if (format === 'pdf') {
+      // A direct click on the prepared link supplies fresh browser user activation.
+      if (state.dialog === exportDialog && exportDialog?.type === 'export') {
+        exportDialog.preparedPdf = { url: URL.createObjectURL(result.blob), filename: result.filename };
+      }
+      return;
+    }
     const url=URL.createObjectURL(result.blob),a=document.createElement('a');
     a.href=url;a.download=result.filename;document.body.append(a);a.click();a.remove();
     setTimeout(()=>URL.revokeObjectURL(url),10000);notify('Transcript exported.');
@@ -802,14 +921,28 @@ async function downloadTranscript(rec,format) {
   } finally {
     state.exportingFormat=null;
     if (state.dialog?.type === 'export') renderDialog();
+    if (state.dialog === exportDialog && exportDialog?.preparedPdf) $('#save-transcript-pdf')?.focus();
   }
 }
 function returnToSegment(rec,segmentId,play=true) {
   closeDialog();state.detailTab='transcript';state.transcriptSearch='';
   if(route().id!==rec.id)navigate(rec.id);else render();
   const segment=rec.segments.find(s=>s.id===segmentId);
-  if(segment?.start!==null)seekTo(rec,segment.start,play);
+  if(Number.isFinite(segment?.start))seekTo(rec,segment.start,play);
   requestAnimationFrame(()=>{const el=$('[data-segment="'+CSS.escape(segmentId)+'"]');el?.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth',block:'center'});el?.classList.add('citation-target');setTimeout(()=>el?.classList.remove('citation-target'),1800);});
+}
+function followPlayback(rec) {
+  if (state.audioId !== rec.id) { notify('Start playback to follow the current moment.'); return; }
+  const segment = rec.segments.find(segmentAtPlaybackTime);
+  if (!segment) { notify('There is no transcript passage at this moment.'); return; }
+  const selector = `#segment-${CSS.escape(segment.id)}`;
+  if (!$(selector) && state.transcriptSearch) {
+    state.transcriptSearch = '';
+    $('#transcript-search').value = '';
+    $('#transcript-turns').innerHTML = transcriptParagraphsMarkup(rec);
+    updatePlayers();
+  }
+  $(selector)?.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth',block:'center'});
 }
 
 document.addEventListener('click',async event=>{
@@ -844,16 +977,20 @@ document.addEventListener('click',async event=>{
   if(action==='play'){toggleAudio(rec);return;}
   if(action==='speaker'){openDialog({type:'speaker',recordingId:rec.id,speakerId:target.dataset.speakerId,segmentId:target.dataset.segmentId,scope:target.dataset.scope || (target.dataset.speakerId === 'unassigned' && target.dataset.segmentId ? 'segment' : 'speaker')});return;}
   if(action==='manage-speakers'){openDialog({type:'speakers',recordingId:rec.id});return;}
+  if(action==='paragraph-menu'){
+    const paragraph=groupTranscriptParagraphs(rec.segments).find(group=>String(group.id)===target.dataset.paragraphId);
+    if(paragraph)openDialog({type:'paragraph-menu',recordingId:rec.id,segments:paragraph.segments});
+    return;
+  }
   if(action==='segment-menu'){openDialog({type:'segment-menu',recordingId:rec.id,segmentId:target.dataset.segmentId});return;}
   if(action==='edit-segment'){openDialog({type:'edit-segment',recordingId:rec.id,segmentId:target.dataset.segmentId});return;}
   if(action==='reassign-segment'){const segment=rec.segments.find(s=>s.id===target.dataset.segmentId);openDialog({type:'speaker',recordingId:rec.id,speakerId:segment.speakerId,segmentId:segment.id,scope:'segment'});return;}
   if(action==='choose-name'||action==='use-suggested'){$('#speaker-name').value=target.dataset.name;$('#speaker-name').focus();return;}
   if(action==='reject-suggested'){const s=speakerById(rec,state.dialog.speakerId);delete s.suggestedName;persist();renderDialog();notify('Suggestion dismissed. Choose the right name.');return;}
-  if(action==='seek-segment'){const segment=rec?.segments.find(s=>s.id===target.dataset.segmentId);if(segment?.start!==null){if(state.dialog)closeDialog();seekTo(rec,segment.start,true);}return;}
+  if(action==='seek-segment'){const segment=rec?.segments.find(s=>s.id===target.dataset.segmentId);if(Number.isFinite(segment?.start)){if(state.dialog)closeDialog();seekTo(rec,segment.start,true);}return;}
   if(action==='cite'){returnToSegment(rec,target.dataset.segmentId,true);return;}
-  if(action==='follow'){const current=$('[data-segment].is-current');if(current)current.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth',block:'center'});else notify('Start playback to follow the current moment.');return;}
-  if(action==='tab'){state.detailTab=target.dataset.tab;state.answer=null;render();return;}
-  if(action==='side-tab'){state.sideTab=target.dataset.tab;state.answer=null;render();return;}
+  if(action==='follow'){followPlayback(rec);return;}
+  if(action==='tab'){state.detailTab=target.dataset.tab;state.answer=null;render();$('#tab-'+state.detailTab)?.focus({preventScroll:true});return;}
   if(action==='ask-suggested'){const q=rec.qa[Number(target.dataset.questionIndex)];state.answer={...q};render();return;}
   if(action==='rename-recording'){openDialog({type:'rename',recordingId:rec.id});return;}
   if(action==='recording-menu'){openDialog({type:'recording-menu',recordingId:rec.id});return;}
@@ -880,8 +1017,7 @@ document.addEventListener('input',event=>{
   if(event.target.id==='library-search'){state.search=event.target.value;refreshList();}
   if(event.target.id==='transcript-search'){
     const rec=currentRec();state.transcriptSearch=event.target.value;
-    const q=state.transcriptSearch.toLowerCase(),segments=rec.segments.filter(s=>!q||(s.text+' '+displayName(speakerById(rec,s.speakerId))).toLowerCase().includes(q));
-    $('#transcript-turns').innerHTML=segments.length?segments.map(s=>segmentMarkup(rec,s)).join(''):'<div class="panel-empty"><p>No matching passages.</p></div>';updatePlayers();
+    $('#transcript-turns').innerHTML=transcriptParagraphsMarkup(rec);updatePlayers();
   }
   if(event.target.matches('[data-seek]'))seekTo(recordById(event.target.dataset.seek),Number(event.target.value),false);
 });
@@ -932,6 +1068,8 @@ document.addEventListener('dragover',event=>{if(event.dataTransfer?.types.includ
 document.addEventListener('dragleave',()=>{state.dragDepth=Math.max(0,state.dragDepth-1);if(!state.dragDepth)document.body.classList.remove('drag-over');});
 document.addEventListener('drop',event=>{
   if(!event.dataTransfer?.files.length)return;event.preventDefault();state.dragDepth=0;document.body.classList.remove('drag-over');
+  const mode=transcriptionMode();
+  if(mode.engine==='deepgram' && !mode.configured){notify(mode.configurationError);return;}
   const files=[...event.dataTransfer.files].filter(f=>f.type.startsWith('audio/')||f.type.startsWith('video/')||/\.(m4a|mp3|wav|aac|aiff?|ogg|flac|mp4|mov|webm)$/i.test(f.name));
   if(!files.length){notify('Drop audio or video files to add a recording.');return;}
   state.pendingFiles=files;openDialog({type:'upload'});

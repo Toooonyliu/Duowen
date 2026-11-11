@@ -1,10 +1,12 @@
-// Public browser configuration contains only the WhisperX service URL.
+// Public browser configuration contains a provider name and optional WhisperX service URL.
 // Per-job access tokens are capabilities returned by that service, never URL parameters.
 const DEFAULT_POLL_MS = 1200;
 const DEFAULT_JOB_TIMEOUT_MS = 60 * 60 * 1000;
 const DEFAULT_UPLOAD_TIMEOUT_MS = 10 * 60 * 1000;
 const DEFAULT_REQUEST_TIMEOUT_MS = 20_000;
 const DEFAULT_READINESS_TIMEOUT_MS = 4 * 60 * 1000;
+const DEEPGRAM_DIRECT_UPLOAD_BYTES = 4 * 1024 * 1024;
+let deepgramMaxUploadBytes = DEEPGRAM_DIRECT_UPLOAD_BYTES;
 
 function failure(message, code, name = 'Error') {
   const error = new Error(message);
@@ -24,6 +26,7 @@ function bounded(value, fallback, minimum, maximum) {
 }
 function runtimeConfiguration() {
   const declared = typeof window !== 'undefined' ? window.__DUOWEN_CONFIG__ || {} : {};
+  const provider = declared.transcriptionProvider || import.meta.env?.VITE_TRANSCRIPTION_PROVIDER || 'whisperx';
   const envUrl = import.meta.env?.VITE_TRANSCRIPTION_API_URL;
   const value = declared.transcriptionBackendUrl || declared.backendUrl || envUrl || '';
   let backendUrl = '', configurationError = '';
@@ -40,7 +43,7 @@ function runtimeConfiguration() {
     } catch { configurationError = 'The WhisperX service address is invalid. Please reconnect the service.'; }
   }
   return {
-    backendUrl, configurationError,
+    provider, backendUrl, configurationError,
     pollMs: bounded(declared.transcriptionPollMs, DEFAULT_POLL_MS, 500, 10_000),
     jobTimeoutMs: bounded(declared.transcriptionTimeoutMs, DEFAULT_JOB_TIMEOUT_MS, 1000, 4 * DEFAULT_JOB_TIMEOUT_MS),
     uploadTimeoutMs: bounded(declared.uploadTimeoutMs, DEFAULT_UPLOAD_TIMEOUT_MS, 1000, DEFAULT_JOB_TIMEOUT_MS),
@@ -52,6 +55,9 @@ function runtimeConfiguration() {
 
 export function getTranscriptionMode() {
   const config = runtimeConfiguration();
+  if (config.provider === 'deepgram') {
+    return { engine: 'deepgram', location: 'server', label: 'Deepgram Nova-3', configured: true, maxUploadBytes: deepgramMaxUploadBytes };
+  }
   return { engine: 'whisperx', location: 'server', label: 'WhisperX cloud', configured: Boolean(config.backendUrl), configurationError: config.configurationError };
 }
 function requiredConfiguration() {
@@ -75,7 +81,7 @@ function safeMessage(payload, fallback) {
   const detail = typeof payload?.error === 'string' ? payload.error : typeof payload?.error?.message === 'string' ? payload.error.message : payload?.detail;
   return typeof detail === 'string' && detail.trim() ? detail.trim().slice(0, 500) : fallback;
 }
-function statusError(status, payload) {
+function statusError(status, payload, service = 'WhisperX') {
   const messages = {
     400: 'This recording could not be processed. Try another audio format.',
     401: 'Access to this transcription could not be verified. Please upload the original file again.',
@@ -85,7 +91,7 @@ function statusError(status, payload) {
     413: 'This file exceeds the service upload limit. Please use a shorter recording.',
     415: 'The service does not support this file format. Try MP3, M4A or WAV.',
     429: 'The transcription service is busy. Please wait and try again.',
-    503: 'The WhisperX service is starting or unavailable. Please try again shortly.',
+    503: `The ${service} service is starting or unavailable. Please try again shortly.`,
   };
   const error = failure(safeMessage(payload, messages[status] || 'The transcription service could not complete this request. Please try again.'), 'HTTP_' + status);
   error.status = status;
@@ -108,6 +114,20 @@ function scope(signal, timeoutMs) {
   else signal?.addEventListener('abort', forward, { once: true });
   const timer = setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs);
   return { signal: controller.signal, timedOut: () => timedOut, close() { clearTimeout(timer); signal?.removeEventListener('abort', forward); } };
+}
+
+export async function checkDeepgramAvailability() {
+  const request = scope(undefined, 10_000);
+  try {
+    const response = await fetch('/api/deepgram', { headers: { Accept: 'application/json' }, cache: 'no-store', signal: request.signal });
+    const status = await response.json();
+    deepgramMaxUploadBytes = bounded(status?.maxUploadBytes, DEEPGRAM_DIRECT_UPLOAD_BYTES, DEEPGRAM_DIRECT_UPLOAD_BYTES, 100 * 1024 * 1024);
+    return { configured: response.ok && status?.configured === true, maxUploadBytes: deepgramMaxUploadBytes };
+  } catch {
+    return { configured: false, maxUploadBytes: deepgramMaxUploadBytes };
+  } finally {
+    request.close();
+  }
 }
 
 async function waitUntilReady(config, signal, onProgress) {
@@ -152,8 +172,10 @@ async function waitUntilReady(config, signal, onProgress) {
   } finally { readiness.close(); }
 }
 
-function uploadFile(file, config, signal, onProgress) {
+function uploadFile(file, config, signal, onProgress, synchronous = false) {
   if (signal.aborted) return Promise.reject(abortError());
+  const service = synchronous ? 'Deepgram' : 'WhisperX';
+  const detail = `Uploading recording to ${service}…`;
   return new Promise((resolve, reject) => {
     const request = new XMLHttpRequest();
     let settled = false;
@@ -164,32 +186,39 @@ function uploadFile(file, config, signal, onProgress) {
       error ? reject(error) : resolve(value);
     };
     const stopped = () => { request.abort(); finish(abortError()); };
-    request.open('POST', config.backendUrl + '/api/jobs', true);
+    request.open('POST', synchronous ? '/api/deepgram' : config.backendUrl + '/api/jobs', true);
     request.timeout = config.uploadTimeoutMs;
     request.withCredentials = false;
     request.setRequestHeader('Accept', 'application/json');
     request.upload.onprogress = event => {
       if (event.lengthComputable && event.total > 0) {
-        emit(onProgress, { stage: 'uploading', percent: Math.min(100, Math.round(event.loaded / event.total * 100)), detail: 'Uploading recording to WhisperX…' });
-      } else emit(onProgress, { stage: 'uploading', detail: 'Uploading recording to WhisperX…' });
+        emit(onProgress, { stage: 'uploading', percent: Math.min(100, Math.round(event.loaded / event.total * 100)), detail });
+      } else emit(onProgress, { stage: 'uploading', detail });
     };
+    if (synchronous) {
+      request.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+      request.upload.onload = () => emit(onProgress, { stage: 'transcribing', detail: 'Waiting for Deepgram to return the transcript…' });
+    }
     request.onload = () => {
       let payload;
       try { payload = JSON.parse(request.responseText); } catch { /* Status-specific fallback below. */ }
-      if (request.status < 200 || request.status >= 300) return finish(statusError(request.status, payload));
+      if (request.status < 200 || request.status >= 300) return finish(statusError(request.status, payload, service));
       if (!payload || typeof payload !== 'object') return finish(failure('The service returned an unreadable upload response. Please try again.', 'INVALID_RESPONSE'));
       finish(null, payload);
     };
-    request.onerror = () => finish(failure('The upload connection was interrupted before a job was confirmed. Check your connection and try again.', 'UPLOAD_NETWORK_ERROR'));
-    request.ontimeout = () => finish(failure('The upload took too long. Check your connection or try a smaller recording.', 'UPLOAD_TIMEOUT', 'TimeoutError'));
+    request.onerror = () => finish(failure(synchronous ? 'The connection was interrupted before a transcript arrived. Check your connection and try again.' : 'The upload connection was interrupted before a job was confirmed. Check your connection and try again.', 'UPLOAD_NETWORK_ERROR'));
+    request.ontimeout = () => finish(failure(synchronous ? 'Deepgram did not return a transcript in time. Try again with a shorter recording.' : 'The upload took too long. Check your connection or try a smaller recording.', 'UPLOAD_TIMEOUT', 'TimeoutError'));
     request.onabort = () => finish(abortError());
     signal.addEventListener('abort', stopped, { once: true });
-    emit(onProgress, { stage: 'uploading', percent: 0, detail: 'Uploading recording to WhisperX…' });
+    emit(onProgress, { stage: 'uploading', percent: 0, detail });
     try {
-      const form = new FormData();
-      form.append('file', file, file.name || 'recording');
-      form.append('language', 'auto');
-      request.send(form);
+      if (synchronous) request.send(file);
+      else {
+        const form = new FormData();
+        form.append('file', file, file.name || 'recording');
+        form.append('language', 'auto');
+        request.send(form);
+      }
     } catch { finish(failure('The recording could not be uploaded. Check the service connection and try again.', 'UPLOAD_NETWORK_ERROR')); }
   });
 }
@@ -230,7 +259,7 @@ function progressFromStatus(payload, job) {
   return progress;
 }
 
-export function normalizeTranscriptionResult(result) {
+export function normalizeTranscriptionResult(result, engine = 'whisperx') {
   if (!result || !Array.isArray(result.segments)) throw failure('The service returned an invalid transcript. Please try again.', 'INVALID_RESULT');
   const segments = result.segments.filter(segment => typeof segment.text === 'string' && segment.text.trim()).map((segment, index) => {
     const start = isNumber(segment.start) && segment.start >= 0 ? segment.start : null;
@@ -243,7 +272,7 @@ export function normalizeTranscriptionResult(result) {
     if (!speakers.some(speaker => speaker.id === segment.speakerId)) speakers.push({ id: segment.speakerId, name: segment.speakerId === 'unassigned' ? 'Unknown speaker' : 'Speaker ' + (speakers.length + 1), confirmed: false });
   }
   return {
-    segments, speakers, engine: 'whisperx',
+    segments, speakers, engine,
     ...(typeof result.language === 'string' ? { language: result.language } : {}),
     ...(isNumber(result.duration) && result.duration > 0 ? { duration: result.duration } : {}),
     timingSource: typeof result.timingSource === 'string' ? result.timingSource : 'asr-segment-approximate',
@@ -302,8 +331,60 @@ async function performJob(start, options, resuming = false) {
   } finally { operation.close(); }
 }
 
+async function deepgramUploadAction(action, data, signal) {
+  const response = await fetch('/api/deepgram', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({ action, ...data }), signal,
+  });
+  if (response.status === 204) return;
+  const result = await response.json().catch(() => null);
+  if (!response.ok) throw statusError(response.status, result, 'Deepgram');
+  if (!result) throw failure('Deepgram returned an unreadable response.', 'INVALID_RESPONSE');
+  return result;
+}
+
+async function transcribeLargeDeepgramFile(file, config, { signal, onProgress }) {
+  const upload = scope(signal, config.uploadTimeoutMs);
+  let capability;
+  try {
+    const contentType = file.type || 'application/octet-stream';
+    const authorized = await deepgramUploadAction('authorize', { contentType, size: file.size }, upload.signal);
+    capability = authorized.capability;
+    const { put } = await import('@vercel/blob/client');
+    await put(authorized.pathname, file, {
+      access: 'private', token: authorized.clientToken, contentType, abortSignal: upload.signal,
+      onUploadProgress: ({ percentage }) => emit(onProgress, { stage: 'uploading', percent: percentage, detail: 'Uploading recording…' }),
+    });
+    upload.signal.throwIfAborted();
+    upload.close();
+    emit(onProgress, { stage: 'transcribing', detail: 'Waiting for Deepgram to return the transcript…' });
+    const processing = scope(signal, 300_000);
+    try { return await deepgramUploadAction('transcribe', { capability }, processing.signal); }
+    catch (error) {
+      if (processing.timedOut()) throw failure('Deepgram did not return a transcript in time.', 'PROVIDER_TIMEOUT');
+      throw error;
+    }
+    finally { processing.close(); }
+  } catch (error) {
+    if (capability) void deepgramUploadAction('cancel', { capability }, AbortSignal.timeout(10_000)).catch(() => {});
+    if (upload.timedOut()) throw failure('The upload took too long. Try again with a faster connection.', 'UPLOAD_TIMEOUT');
+    if (signal?.aborted) throw abortError();
+    throw error;
+  } finally {
+    upload.close();
+  }
+}
+
 export function transcribeFile(file, options = {}) {
   if (!file || typeof file.arrayBuffer !== 'function' || !Number.isFinite(file.size) || file.size <= 0) return Promise.reject(failure('Choose a non-empty audio or video file.', 'INVALID_FILE'));
+  const config = runtimeConfiguration();
+  if (config.provider === 'deepgram') {
+    if (file.size > deepgramMaxUploadBytes) return Promise.reject(failure(`This version supports files up to ${deepgramMaxUploadBytes / 1024 ** 2} MiB.`, 'FILE_TOO_LARGE'));
+    const result = file.size > DEEPGRAM_DIRECT_UPLOAD_BYTES
+      ? transcribeLargeDeepgramFile(file, config, options)
+      : uploadFile(file, config, options.signal || new AbortController().signal, options.onProgress, true);
+    return result.then(value => normalizeTranscriptionResult(value, 'deepgram'));
+  }
   return performJob(async (config, signal) => {
     await waitUntilReady(config, signal, options.onProgress);
     return uploadFile(file, config, signal, options.onProgress);
