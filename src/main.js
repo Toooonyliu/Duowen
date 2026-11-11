@@ -358,13 +358,11 @@ function processingVisual(rec) {
   const current=state.processing[rec.id] || status(rec);
   if(['cancelling','cancellation-unconfirmed'].includes(current.key)) return `<div class="processing-heading">${current.key==='cancelling'?'<span class="loading-ring" aria-hidden="true"></span>':icon('warning-circle')}<h3 aria-live="polite">${esc(current.label)}</h3></div><p class="processing-description">${esc(rec.transcription.cancellationError || current.detail || 'Waiting for the service to confirm that processing has stopped.')}</p><p class="fine-print">The cloud job may still be running until cancellation is confirmed.</p>`;
   const known=Number.isFinite(current.percent), percent=known?Math.max(0,Math.min(100,current.percent)):null;
-  const preparing=['uploading','model-loading','decoding'].includes(current.key);
-  const phase=current.key==='queued'?0:preparing?1:2;
-  const phases=['Queued','Prepare audio','Transcribe','Ready'];
-  return `<div class="processing-heading"><span class="loading-ring" aria-hidden="true"></span><h3 aria-live="polite">${esc(current.label)}</h3></div><p class="processing-description">${esc(current.detail || 'Your recording will appear here as soon as transcription finishes.')}</p><div class="job-progress ${known?'':'is-indeterminate'}" role="progressbar" aria-label="${esc(current.label)}" ${known?'aria-valuemin="0" aria-valuemax="100" aria-valuenow="'+Math.round(percent)+'"':''}><span style="${known?'width:'+percent+'%':''}"></span></div><div class="job-progress-meta"><span>${esc(progressLabel(current) || (current.key==='queued'?'Waiting for a processing slot':'Processing your recording'))}</span><span>${known?'This step':''}</span></div><ol class="process-steps">${phases.map((label,index)=>`<li class="${index<phase?'complete':index===phase?'active':''}"><span>${index<phase?icon('check'):index+1}</span>${label}</li>`).join('')}</ol>`;
+  return `<div class="processing-heading"><span class="loading-ring" aria-hidden="true"></span><h3 aria-live="polite">${esc(current.label)}</h3></div><p class="processing-description">${esc(current.detail || 'Your transcript will appear here as soon as it is ready.')}</p><div class="job-progress ${known?'':'is-indeterminate'}" role="progressbar" aria-label="${esc(current.label)}" ${known?'aria-valuemin="0" aria-valuemax="100" aria-valuenow="'+Math.round(percent)+'"':''}><span style="${known?'width:'+percent+'%':''}"></span></div><div class="job-progress-meta"><span>${esc(progressLabel(current) || (current.key==='queued'?'Waiting for a processing slot':'Processing your recording'))}</span></div>`;
 }
 function processingMarkup(rec) {
-  return `<div class="processing-panel" data-processing-view="${esc(rec.id)}"><div class="processing-visual">${processingVisual(rec)}</div><div class="processing-actions">${cancellationActions(rec)}</div><p class="fine-print" data-job-retention>${cancellationRetention(rec)}</p></div>`;
+  return `<div class="processing-panel" data-processing-view="${esc(rec.id)}"><div class="processing-visual">${processingVisual(rec)}</div><div class="processing-actions">${cancellationActions(rec)}</div><p class="fine-print" data-job-retention>${cancellationRetention(rec)}</p>
+    <div class="transcript-skeleton" aria-hidden="true">${[[92,64],[78],[96,88,41]].map(lines=>'<div class="skeleton-turn"><span class="skeleton-name"></span>'+lines.map(width=>'<span class="skeleton-line" style="width:'+width+'%"></span>').join('')+'</div>').join('')}</div></div>`;
 }
 function cancellationActions(rec) {
   const waiting=Boolean(rec.transcription?.cancelRequestedAt && rec.transcription?.job?.accessToken),requesting=Boolean(rec.transcription?.cancelRequestInFlight);
@@ -375,6 +373,7 @@ function cancellationRetention(rec) {
   if (rec.transcription?.engine==='deepgram') return 'Keep this page open until the transcript is ready. If you stop waiting, Deepgram may still finish the request.';
   return rec.transcription?.job?.accessToken?'You can switch views or refresh. This cloud job will reconnect automatically.':'You can leave this view. Keep this page open until the audio finishes uploading.';
 }
+function hasNotes(rec) { const notes = rec.notes || {}; return Boolean(notes.summary?.length || notes.actions?.length || notes.decisions?.length); }
 function notesMarkup(rec) {
   const notes = rec.notes || {};
   const item = entry => typeof entry === 'string' ? {text:entry} : entry;
@@ -510,7 +509,7 @@ function renderDetail(rec) {
         <div class="detail-meta"><span>${formatTime(rec.duration)}</span><span>${esc(dayLabel(rec.uploadedAt))}, ${esc(timeLabel(rec.uploadedAt))}</span><span>${esc(rec.originalFilename)}</span><span class="sample-label">${esc(fileSourceLabel(rec))}</span></div></div>
       <div class="detail-heading-actions">${statusMarkup(rec)}${ready ? `<button type="button" class="button secondary" data-action="copy-transcript" data-id="${id}">${icon('copy')}Copy</button><button type="button" class="button primary" data-action="export" data-id="${id}">${icon('download-simple')}Export</button>` : ''}${button('dots-three','Recording actions','recording-menu','data-id="' + id + '"','quiet')}</div></header>
       <div class="detail-mobile-status state-${esc(statusText.key)}" data-mobile-status="${id}">${icon(icons[statusText.key] || 'info')}<span>${esc(statusText.label)}${statusText.detail?' · '+esc(statusText.detail):''}</span></div>
-      <nav class="workspace-tabs" aria-label="Recording workspace"><div class="main-tabs" role="tablist">${[{id:'transcript',icon:'text-align-left',label:'Transcript'},{id:'notes',icon:'note-pencil',label:'Notes'},{id:'ask',icon:'chat-circle-text',label:'Ask'}].map(t => `<button id="tab-${t.id}" type="button" role="tab" aria-selected="${state.detailTab === t.id}" aria-controls="workspace-panel" class="workspace-tab ${state.detailTab === t.id ? 'active' : ''}" data-action="tab" data-tab="${t.id}">${icon(t.icon)}${t.label}</button>`).join('')}</div>
+      <nav class="workspace-tabs" aria-label="Recording workspace"><div class="main-tabs" role="tablist">${[{id:'transcript',icon:'text-align-left',label:'Transcript'},{id:'notes',icon:'note-pencil',label:'Notes'},{id:'ask',icon:'chat-circle-text',label:'Ask'}].filter(t => t.id !== 'notes' || hasNotes(rec)).map(t => `<button id="tab-${t.id}" type="button" role="tab" aria-selected="${state.detailTab === t.id}" aria-controls="workspace-panel" class="workspace-tab ${state.detailTab === t.id ? 'active' : ''}" data-action="tab" data-tab="${t.id}">${icon(t.icon)}${t.label}</button>`).join('')}</div>
       ${ready ? '<span class="shortcut-hint" aria-hidden="true"><kbd>Space</kbd> play <kbd>←</kbd><kbd>→</kbd> 5s <kbd>/</kbd> find</span>' : ''}</nav>
       <div class="workspace-body" id="workspace-panel" role="tabpanel" aria-labelledby="tab-${state.detailTab}">
       ${state.detailTab === 'transcript' ? '<section class="transcript-panel" aria-label="Transcript">' + transcriptMarkup(rec) + '</section>' : '<section class="wide-panel">' + (state.detailTab === 'notes' ? notesMarkup(rec) : qaMarkup(rec)) + '</section>'}
@@ -807,7 +806,6 @@ function refreshTranscriptionViews(rec, rebuild=false) {
     if(bar && known){bar.setAttribute('aria-valuemin','0');bar.setAttribute('aria-valuemax','100');bar.setAttribute('aria-valuenow',Math.round(progress.percent));}
     else if(bar){bar.removeAttribute('aria-valuenow');bar.removeAttribute('aria-valuemin');bar.removeAttribute('aria-valuemax');}
     if(fill)fill.style.width=known?progress.percent+'%':'';
-    const step=$('.job-progress-meta > span:last-child',visual);if(step)step.textContent=known?'This step':'';
   });
 }
 function queueTranscription(rec,file,{resumeJob=null}={}) {
@@ -1144,6 +1142,7 @@ document.addEventListener('input',event=>{
   if(event.target.matches('[data-seek]'))seekTo(recordById(event.target.dataset.seek),Number(event.target.value),false);
 });
 document.addEventListener('change',event=>{
+  if(event.target.matches('[data-seek]')){const rec=recordById(event.target.dataset.seek);if(rec&&route().id===rec.id&&state.detailTab==='transcript')followPlayback(rec);}
   if(event.target.matches('[data-speed]')){state.rate=Number(event.target.value);audio.playbackRate=state.rate;$$('[data-speed]').forEach(select=>select.value=state.rate);}
   if(event.target.matches('[data-note-action]')){
     const rec=recordById(event.target.dataset.id),i=Number(event.target.dataset.noteAction),entry=rec.notes.actions[i];

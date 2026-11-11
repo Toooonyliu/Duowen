@@ -907,3 +907,18 @@ mark.hit.is-current-hit { background: #f0c64a; }
 @media (prefers-contrast: more) {
   .transcript-passage.is-current { outline: 1px solid var(--ink); }
 }
+
+/* Waiting for a transcript: one status line, then the shape of what is coming. */
+.processing-panel { max-width: 720px; padding: 44px 0 24px; }
+.processing-heading h3 { font-family: var(--display); font-size: 26px; font-weight: 400; letter-spacing: -.015em; }
+.processing-description { margin-bottom: 18px; font-size: 15px; }
+.job-progress { height: 4px; }
+.processing-actions { margin: 14px 0 0; }
+.processing-panel > .fine-print { margin-top: 2px; }
+.transcript-skeleton { margin-top: 40px; padding-top: 28px; border-top: 1px solid var(--line); }
+.skeleton-turn { display: grid; gap: 12px; margin-bottom: 30px; }
+.skeleton-name, .skeleton-line { display: block; height: 12px; border-radius: 6px; background: linear-gradient(90deg, rgba(23,48,47,.06) 25%, rgba(23,48,47,.11) 37%, rgba(23,48,47,.06) 63%); background-size: 400% 100%; animation: skeleton-sheen 1.8s ease infinite; }
+.skeleton-name { width: 84px; height: 10px; }
+@keyframes skeleton-sheen { from { background-position: 100% 50%; } to { background-position: 0 50%; } }
+@media (max-width: 600px) { .processing-panel { padding-top: 28px; } .processing-heading h3 { font-size: 22px; } }
+@media (prefers-reduced-motion: reduce) { .skeleton-name, .skeleton-line { animation: none; } }

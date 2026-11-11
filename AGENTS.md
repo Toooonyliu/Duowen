@@ -9,6 +9,9 @@ The user asked (2026-11) for the interaction and reading experience to follow th
 - **Transcript:** reads like a document. The speaker is named once per turn with a stable per-speaker color; every paragraph keeps a quiet timestamp in the left gutter; body text is 17px/1.75 at a 66ch measure. Each sentence is clickable and plays from its exact timestamp. Copy, edit and change-speaker appear on paragraph hover or after tapping the paragraph; text is edited inline (Enter saves, Esc cancels), never in a modal, and every sentence keeps its own timing.
 - **Listening:** the player is docked to the bottom of the viewport. While audio plays the spoken sentence is highlighted and kept in view; manual scrolling pauses following and shows "Back to current line". Space, ←/→ and / are the keyboard shortcuts.
 - **Search:** find-in-transcript highlights matches in place with a count and Enter / Shift+Enter navigation. It never hides the surrounding conversation.
+- **Waiting:** while a recording is transcribed, show one status line, one progress bar and a skeleton of the transcript to come. No multi-step stepper.
+- **Tabs:** Notes appears only when a recording actually has notes; Ask stays available for every transcript. Do not show an empty Notes tab.
+- **Scrubbing:** releasing the seek bar scrolls the transcript to that moment.
 
 Browser QA must include timestamp seeking, speaker correction, inline text editing, file upload and narrow screens.
 
