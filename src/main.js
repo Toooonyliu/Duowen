@@ -33,7 +33,7 @@ audio.preload = 'metadata';
 audio.id = 'demo-audio';
 document.body.append(audio);
 const state = {
-  recordings: [], seed: [], knownSpeakers: [], search: '', showSearch: false,
+  recordings: [], seed: [], knownSpeakers: [], search: '',
   detailTab: 'transcript', transcriptSearch: '', audioId: null, currentTime: 0,
   playing: false, rate: 1, dialog: null, answer: null, messages: {}, collapsedBatches: new Set(),
   undo: null, loading: true, dragDepth: 0, pendingFiles: [], pendingSeek: null, processing: {},
@@ -252,13 +252,15 @@ function statusMarkup(rec) {
 }
 function toolbar(mode = 'library') {
   const link = (view, label, name) => `<a class="nav-link ${mode === view ? 'active' : ''}" href="#/${view}" ${mode === view ? 'aria-current="page"' : ''}>${icon(name)}<span>${label}</span></a>`;
-  const search = mode !== 'library' ? '' : state.showSearch || state.search
-    ? `<div class="search-field">${icon('magnifying-glass')}<input id="library-search" type="search" autocomplete="off" placeholder="Search recordings" value="${esc(state.search)}" aria-label="Search recordings">${button('x','Close search','close-search','','small')}</div>`
-    : button('magnifying-glass','Search recordings','search','','quiet');
+  const openId = mode === 'detail' ? route().id : null;
+  const recent = state.recordings.slice(0, 6);
+  // A sidebar on wide screens, a top bar on narrow ones; the markup is the same.
   return `<header class="toolbar">
     <div class="toolbar-left"><a class="brand" href="#/upload" aria-label="Duowen home">${icon('waveform')}<span>Duowen</span></a>
-      <nav class="top-nav" aria-label="Primary">${link('upload','New','plus')}${link('library','Library','stack')}</nav></div>
-    <div class="toolbar-actions">${search}${button('info','About Duowen','info','','quiet')}</div>
+      <nav class="top-nav" aria-label="Primary">${link('upload','Home','house')}${link('library','Library','stack')}</nav>
+      <button type="button" class="button primary new-button" data-action="choose-upload" aria-label="New transcript">${icon('plus')}<span>New transcript</span></button></div>
+    ${recent.length ? `<nav class="side-recents" aria-label="Recent recordings"><span class="side-label">Recent</span>${recent.map(rec => `<a class="side-link ${rec.id === openId ? 'active' : ''}" href="#/recording/${encodeURIComponent(rec.id)}" ${rec.id === openId ? 'aria-current="page"' : ''}>${esc(rec.title)}</a>`).join('')}</nav>` : ''}
+    <div class="toolbar-actions"><button type="button" class="nav-link" data-action="info" aria-label="About Duowen">${icon('info')}<span>About</span></button></div>
   </header>`;
 }
 function player(rec) {
@@ -299,7 +301,7 @@ function libraryList() {
   </section>`).join('');
 }
 function renderLibrary() {
-  return `<main class="shell library-shell">${toolbar()}<div class="library-context"><h1>Library</h1><span>${state.recordings.length} recording${state.recordings.length === 1 ? '' : 's'}</span></div><div id="recording-list">${libraryList()}</div><footer class="library-footer"><button type="button" class="quiet-link" data-action="info">About the recordings and local playback</button></footer></main>`;
+  return `<main class="shell library-shell">${toolbar()}<div class="library-context"><div><h1>Library</h1><span>${state.recordings.length} recording${state.recordings.length === 1 ? '' : 's'}</span></div><div class="search-field">${icon('magnifying-glass')}<input id="library-search" type="search" autocomplete="off" placeholder="Search recordings" value="${esc(state.search)}" aria-label="Search recordings"></div></div><div id="recording-list">${libraryList()}</div><footer class="library-footer"><button type="button" class="quiet-link" data-action="info">About the recordings and local playback</button></footer></main>`;
 }
 function recentMarkup() {
   const recent = state.recordings.slice(0, 3);
@@ -331,7 +333,7 @@ function renderUpload() {
   const blocked = mode.engine==='deepgram' && !mode.configured;
   return `<main class="shell upload-shell">${toolbar('upload')}
     <section class="upload-entry" aria-labelledby="upload-title">
-      <div class="entry-heading"><h1 id="upload-title">Turn a recording into a transcript you can read.</h1><p>Drop in audio or video. Duowen separates the speakers, keeps every timestamp, and starts right away.</p></div>
+      <div class="entry-heading"><h1 id="upload-title">Turn a recording into a transcript you can read</h1><p>Drop in audio or video. Duowen separates the speakers, keeps every timestamp, and starts right away.</p></div>
       ${mode.configured===false ? '<div class="service-notice" role="status">'+icon('plug')+'<span><strong>'+(mode.checking ? 'Checking transcription service' : 'Transcription is unavailable')+'</strong><br>'+esc(mode.configurationError)+'</span></div>' : ''}
       <div class="upload-dropzone ${blocked?'is-disabled':''}" id="upload-dropzone">
         <div class="upload-symbol">${icon('waveform')}</div>
@@ -1089,8 +1091,7 @@ document.addEventListener('click',async event=>{
   if(action==='go-library'){goToPage('library');return;}
   if(action==='go-upload'||action==='upload'){goToPage('upload');return;}
   if(action==='open'){navigate(rec.id);return;}
-  if(action==='search'){state.showSearch=true;render();$('#library-search')?.focus();return;}
-  if(action==='close-search'||action==='clear-search'){state.search='';state.showSearch=false;render();return;}
+  if(action==='clear-search'){state.search='';render();return;}
   if(action==='info'){openDialog({type:'info'});return;}
   if(action==='choose-upload'){chooseFiles();return;}
   if(action==='close-dialog'){closeDialog();return;}
@@ -1184,9 +1185,9 @@ document.addEventListener('keydown',event=>{
     else if(event.key==='Escape'&&state.transcriptSearch){event.preventDefault();event.target.value='';event.target.dispatchEvent(new Event('input',{bubbles:true}));}
     return;
   }
-  if(event.key==='Escape'&&!state.dialog&&state.showSearch){state.showSearch=false;state.search='';render();}
+  if(event.key==='Escape'&&event.target.id==='library-search'&&state.search){state.search='';render();}
   const input=event.target.closest('input,textarea,select,button,a,[contenteditable],dialog');
-  if(!input&&!state.dialog&&event.key==='/'){event.preventDefault();if(route().view==='library'){state.showSearch=true;render();$('#library-search')?.focus();}else $('#transcript-search')?.focus();}
+  if(!input&&!state.dialog&&event.key==='/'){event.preventDefault();($('#library-search')||$('#transcript-search'))?.focus();}
   if(!input&&!state.dialog&&event.code==='Space'&&route().view!=='upload'){const rec=currentRec();if(rec){event.preventDefault();state.follow=true;toggleAudio(rec);}}
   if(!input&&!state.dialog&&['ArrowLeft','ArrowRight'].includes(event.key)&&!event.metaKey&&!event.ctrlKey&&!event.altKey&&route().view==='detail'){const rec=currentRec();if(rec?.audioUrl&&state.audioId===rec.id){event.preventDefault();seekTo(rec,audio.currentTime+(event.key==='ArrowLeft'?-5:5),false);}}
   if(!input&&['PageUp','PageDown','Home','End','ArrowUp','ArrowDown'].includes(event.key))pauseFollowing();
