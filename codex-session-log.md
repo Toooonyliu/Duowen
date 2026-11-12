@@ -2,7 +2,7 @@
 
 Tony Liu · CMU AI Augmented Design, Project 3 · November 12, 2026
 
-This log records all six user prompts in the Codex handoff chat through the portfolio request, in order, followed by brief work notes. Attachment metadata and local paths injected by the app are omitted. The last prompt included two Canvas screenshots specifying a 3–4 minute project video and a 2–3 minute process video, both due November 12 at 9:00 AM. The earlier Claude collaboration is in [claude-session-log.md](claude-session-log.md).
+This log records the user prompts in the Codex handoff chat, in order, followed by brief work notes. Attachment metadata and local paths injected by the app are omitted. The portfolio request included two Canvas screenshots specifying a 3–4 minute project video and a 2–3 minute process video, both due November 12 at 9:00 AM. The earlier Claude collaboration is in [claude-session-log.md](claude-session-log.md).
 
 ## 1. Taking over from Claude
 
