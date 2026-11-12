@@ -172,3 +172,27 @@ Corrected the earlier account of the project’s motivation. The Project Video s
 **Codex**
 
 Rewrote the Project Video opening to state the tool directly, then introduce a representative student using a 40-minute recording as context for AI. Compared current consumer plan limits and prices, and verified the production file size limit. Added a separate model price comparison to the Process Video and highlighted the shipped Deepgram Nova-3 Multilingual API. Replaced the Project Deck’s feature screenshots with clickable recording and project demos using synthetic material. Verified timestamp playback, transcript editing, both Send to AI dialogs, copying, and a two-recording Markdown download.
+
+---
+
+## 9. Writing the timed speaking scripts
+
+**Tony**
+
+> OK，你直接给我两个演讲稿吧，英文的当然是，按照他们的时长和 slides section 来说明我需要去讲述的内容，好不好？把我们之前我说的这些内容的重点都 mention 到，不要就是说一些无用的废话，因为时间真的非常短。
+
+**Codex**
+
+Wrote English scripts aligned to all 13 slides and their timings, with stage directions for the recording and project walkthroughs. Checked pricing sources and flagged the updated Otter Pro price.
+
+---
+
+## 10. Polishing both decks and replacing the demos
+
+**Tony**
+
+> OK，我觉得目前的这两个 slide deck 还可以更加地 visually appealing 一点，同时展示信息的方式，多余的文字不要，大部分能用短语的就用短语，以及所有的这些 demo，interactive demo，你要么就直接做我们网站上面的截屏，对不对？有些图片，或者说动图，用这些东西来替代吧，我觉得。
+
+**Codex**
+
+Shortened on-screen copy, gave the project workflow and process comparisons visual structure, and replaced interactive demo panels with actual Duowen screenshots captured with synthetic playtest data. Updated Otter Pro pricing and the speaker cues for the screenshot walkthroughs. Checked all 13 slides on desktop and at 390 px.
