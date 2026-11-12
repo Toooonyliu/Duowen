@@ -105,6 +105,7 @@ function createHarness() {
     setInterval: callback => { intervals.add(callback); return callback; },
     clearInterval: callback => intervals.delete(callback),
     audioMetadata: async () => ({ duration: 90, error: false }),
+    storeAudio() {},
     navigate: id => navigation.push(id),
     closeDialog() {},
     render() {},

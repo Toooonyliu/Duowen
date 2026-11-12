@@ -1005,5 +1005,32 @@ body { background: var(--surface); }
   .recording-header, .library-shell .recording-header { padding: 0; }
   .upload-entry { margin-top: 16px; }
 }
-.detail-meta > span:nth-last-child(2)::after { display: none; }
+.detail-meta > span:has(+ .sample-label)::after { display: none; }
 .detail-meta > .sample-label { margin-left: 10px; }
+
+/* Dialogs: focus goes to the action or the field, never to the close button, and the
+   close button needs no tooltip inside a clipped surface. */
+.demo-dialog:focus { outline: none; }
+.dialog-heading [data-tooltip]::after { display: none !important; }
+
+/* Audit pass: quieter rows, honest panels, complete phone top bar. */
+.for-touch { display: none; }
+@media (hover: none) { .for-pointer { display: none; } .for-touch { display: inline; } }
+.recording-main, .library-shell .recording-main { grid-template-columns: minmax(0,1fr) auto auto; }
+.recording-main .record-status[data-status-key="ready"] { display: none; }
+.more-formats > summary { width: fit-content; padding: 8px 2px; color: var(--accent); font-size: 14px; font-weight: 500; cursor: pointer; border-radius: 6px; }
+.more-formats > .export-options { margin-top: 8px; }
+.ask-intro { margin-bottom: 14px; font-family: var(--display); font-size: 24px; font-weight: 400; letter-spacing: -.01em; }
+.ask-form { padding: 6px 6px 6px 16px; border-radius: 999px; }
+.ask-form input { font-size: 16px; }
+.ask-form .icon-button { width: 38px; height: 38px; flex-basis: 38px; border-radius: 50%; }
+.ask-content > .fine-print { margin: 10px 0 28px; }
+.question-suggestions { margin-bottom: 28px; }
+.qa-answer p { font-size: 16px; }
+.qa-answer blockquote { font-size: 15px; }
+.question-label { font-size: 14px; }
+@media (max-width: 600px) {
+  .toolbar-actions .nav-link .ph { display: inline-block; }
+  .ask-intro { font-size: 22px; }
+}
+.scope-options[hidden] + .check-label { margin-top: 18px; }
