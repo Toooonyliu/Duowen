@@ -244,3 +244,15 @@ Revised Project Video slides 2 and 3 and their timed English speaker notes. Alex
 **Codex**
 
 Provided both complete English recording scripts in the chat, matching the current slide order and timing (Project 3:30, Process 2:45), with cues for the two Project screenshots.
+
+---
+
+## 15. Making the Process Video about building with AI agents
+
+**Tony**
+
+> Process Video说得实在是太不像人话了，对不对？Process Video我最关心的是，我到底用 AI Agents干了什么，它是怎么，你是怎么帮我一步步把我这个网站的 idea变成现实的。所以说，当然我们可以说我们是怎么 compare different model的，但是也没有必要全部都在说哪个 model更好，或者说是怎么怎么样。我需要关心的是，比如说我遇到了什么难题，然后我用 AI 是怎么解决的，或者说我怎么用 AI 去做 research的，然后我怎么用 AI 去帮我找不同的这种免费的 skill的啊。然后当然你可以说，比如说 Whisper X 是干什么的，然后 Deepgram 又是干什么的，对不对？是 AI 是怎么帮我理解，如果我想要让我这个 AI tool work，我需要干什么，我怎么让它成功地部署在网页上面。这个是我需要去在这个 transcript里面去说明的东西，OK？所以说你可以在最小改动这个 slide deck的情况下，你再给我一版新的 transcript吗？就是新的这个 speech，这个演讲稿吗。
+
+**Codex**
+
+Rewrote the six timed English speaker notes to explain how AI agents helped define the upload test, research public transcription skills, get WhisperX running locally, and verify the Deepgram workflow on Vercel. Kept the six slides and the 2:45 timing intact.
