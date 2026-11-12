@@ -196,3 +196,27 @@ Wrote English scripts aligned to all 13 slides and their timings, with stage dir
 **Codex**
 
 Shortened on-screen copy, gave the project workflow and process comparisons visual structure, and replaced interactive demo panels with actual Duowen screenshots captured with synthetic playtest data. Updated Otter Pro pricing and the speaker cues for the screenshot walkthroughs. Checked all 13 slides on desktop and at 390 px.
+
+---
+
+## 11. Refreshing the timed scripts after the visual revision
+
+**Tony**
+
+> OK，那你按最新版的两个 slide deck 再给我一版英文演讲稿吧。还是按每一页和时长来，Project 3:30，Process 2:45。Project 第 5、6 页现在是截图，就告诉我指哪里、怎么讲。口播尽量精简，我要直接录了。
+
+**Codex**
+
+Provided concise English scripts for the 3:30 Project and 2:45 Process decks, with pointing cues for the screenshots.
+
+---
+
+## 12. Correcting the Chinese name
+
+**Tony**
+
+> 还有一点，就是我们这个多问，它其实上不叫多问，它的中文，它应该是多闻。多是多少的多，闻是听闻的闻啊。这是这个取义，是因为它是 transcript嘛，对吧？多问就不太对了。
+
+**Codex**
+
+Corrected the portfolio case study, AI Process page, and Project Video cover to Duowen 多闻. The character 闻 refers to hearing.
