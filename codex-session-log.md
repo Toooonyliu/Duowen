@@ -232,3 +232,15 @@ Corrected the portfolio case study, AI Process page, and Project Video cover to 
 **Codex**
 
 Revised Project Video slides 2 and 3 and their timed English speaker notes. Alex regularly records classes, discussions, and meetings to verify exact wording and keep his AI agents current with project context. The competitive analysis compares the user workflows of Otter, Notta, and Fireflies. The Process Video retains backend model and API pricing comparisons. Verified both revised slides and their speaker notes in the browser.
+
+---
+
+## 14. Consolidating both recording scripts
+
+**Tony**
+
+> 现在直接把新的两份的 transcript都给我吧，列在这里，我直接在这里看。
+
+**Codex**
+
+Provided both complete English recording scripts in the chat, matching the current slide order and timing (Project 3:30, Process 2:45), with cues for the two Project screenshots.
