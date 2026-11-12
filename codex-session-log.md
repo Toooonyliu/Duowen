@@ -322,3 +322,17 @@ Reviewed the existing Design and AI Process pages alongside the Flighty and Mibl
 Rebuilt the AI Process page around skill research, the browser → Vercel API → Deepgram → editor architecture, WhisperX setup/debugging, deployment configuration, and AI-assisted UI revisions. Kept the live large-file path and full-length-session evaluation explicitly pending. Existing video decks and speeches were unchanged.
 
 Validated the pages at desktop and 390 px widths, checked tab switching and keyboard navigation, loaded the actual screenshots, checked local links/assets and JavaScript syntax, and found no page overflow or browser console errors. Saved the portfolio changes on codex/duowen-project-3 (commit 8b3c8fa); no main merge or production deployment was performed.
+
+---
+
+## 21. Giving the AI Process page a visual opening and a detailed build narrative
+
+**Tony**
+
+> 我看到现在 AI Process 是一个，怎么说，单独的界面。AI Process 的部分好像没有太，没有所谓的 Hero Page，也没有太详细的这种步骤的说明，对不对？虽然我看到了一点这个，一点示意图吧，但是还不够。所以说我觉得这个地方是不是 AI Process 的页面也可以稍微地跟进一下，改进一下。
+
+**Codex**
+
+Expanded the AI Process page with a visual hero, an actual-app screenshot, clear author/agent roles, and five linked chapters: find the tool, make it run, put it online, refine the interface, and evaluate the result. Added a skill/engine/interface diagram, an evidence-based WhisperX debugging sequence, a more detailed Vercel/Deepgram flow with the pending large-file branch, and screenshots paired with concrete UI changes. Kept Tony’s own bug reports separate from reported playtest findings; technical research and build details are expandable.
+
+Checked claims against local validation evidence and the collaboration logs. Verified desktop and 390 px layouts, chapter links, disclosure controls, local links/assets, and console output. Fixed missing word spacing when desktop heading breaks disappear on mobile. Changes are isolated to ai-process.html and a new ai-process.css on codex/duowen-project-3 (fc0484c). The Design page, video decks, and app behavior were unchanged. No production deployment or main merge was performed.
