@@ -160,3 +160,15 @@ Used the supplied assignment screenshots and portfolio references to prepare an 
 **Codex**
 
 Corrected the earlier account of the project’s motivation. The Project Video starts with the need to bring class and discussion recordings into an existing AI conversation. The Process Video follows the technical work from agent skills and local WhisperX to the Vercel and Deepgram production path. Compared published costs with the project’s observed results, and distinguished single-recording copy and paste from the project attachment workflow. Verified the seven- and six-slide decks first, then revised the portfolio pages and checked both at desktop and phone widths.
+
+---
+
+## 8. Leading with the audience and adding a clickable demo
+
+**Tony**
+
+> 嗯，我看了一下这个，比如说这个 Project Video，它现在还是不是很对啊，对吧？你怎么能够在第二页直接说 After design class 呢，对吧？我们没有时间，就是这很显然不 professional啊，对不对？你直接就说贴入正题，说我们这个项目就好了呀，对不对？我说的直接塑造一个 persona，对不对？谁在使用，谁是这个 target audience，他的情景是怎么样子的，对吧？比如说他现在就是在用 AI 去 analyze 他生活里面的这种重要的场合和信息，那他既然做了 recording，他怎么才能更高效地把这个信息在他的人工的 review 的情况下拿到 transcript，并且给到 AI 呢，对不对？让 AI 直接去分析视频，或者说是音频，肯定是很费工夫的，所以说有这个转写的过程也是一个资料的收集和整理的过程，所以这个是必要的。但是现在市面上的这个很贵了，你完全没有按照我说的这个逻辑和节奏去说呀，对不对？这是怎么回事？然后同时，在你有一些，比如说我们在说不同的 model 的时候，在选取的时候，应该多比较呀，对吧？Ultra Basic、Node 3，那我最终用的是什么？你总得圈出来吧，说出来吧。我们现在最终用了什么，它能够保证有多长时间的这个 session，是我不需要去付额外费用的，对不对？我最终用了什么 API，以及在有一些是吧? One recording into the chat什么什么，这些有些话语都不太 make sense，对不对？然后再一个就是说，有截图的地方，与其放截图，为什么不直接放一个 GIF 呢？或者直接放一个我可以现在就上去做的一个小 demo，对不对？就是我可以直接用鼠标去点，然后就可以看到不同的这个屏幕的样子。比如说我说我这里可以直接点，我就 Send to AI，那点了 Send to AI 是什么界面弹出来，有这么样一个 demo，不好吗？
+
+**Codex**
+
+Rewrote the Project Video opening to state the tool directly, then introduce a representative student using a 40-minute recording as context for AI. Compared current consumer plan limits and prices, and verified the production file size limit. Added a separate model price comparison to the Process Video and highlighted the shipped Deepgram Nova-3 Multilingual API. Replaced the Project Deck’s feature screenshots with clickable recording and project demos using synthetic material. Verified timestamp playback, transcript editing, both Send to AI dialogs, copying, and a two-recording Markdown download.
