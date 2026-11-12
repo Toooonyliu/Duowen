@@ -270,3 +270,15 @@ Rewrote the six timed English speaker notes to explain how AI agents helped defi
 **Codex**
 
 Reviewed the six slides and their timed narration against the course rubric and the separate Process Video brief. Identified the missing first-person Discover evidence and the need to show one AI-assisted interface decision alongside the backend research and live test.
+
+---
+
+## 17. Centering the Process Video on the in-person playtest
+
+**Tony**
+
+> 对啊，所以说现在需要比对，对不对？然后这个 Project 3 其实最大的就是说，比如说我们用 AI 去把这个 idea 做出来之后，我会发现，在真的去比较的时候，我是去实地地做了这种 play test，然后让其他的人用了我们的这个 transcription file 之后，会发现，第一，人们都非常希望他们能够在把这个 files 发给 AI 之前，他能够清楚地看到他的 recording 被转成了这个 text file 之后是什么样子，他要清楚地看到不同的 speaker 在什么时候说了什么话，以及以一个比较这种可视化的方式去看到所有人是怎么在不同的时间是怎么说的，这样子他才能知道有些地方是不是可能会有错误。然后在这个错误发现之后，他再怎么怎么样。反正就是说现在的整体就太长了，而且你就是所有的这些都不符合要求，所以说你直接帮我把 slides 也改了，然后把这个 speaking script 也改了，然后重新给我，怎么样。
+
+**Codex**
+
+Reworked the six Process Video slides and English narration around the in-person playtest. Compared the original emphasis on getting a transcript into AI with participants’ need to see who said what and when and catch mistakes first. Showed the review interface with example data, condensed the backend story, and kept the live 90-second test distinct from the playtest. Shortened the target to 2:25 and checked all six slides at desktop and 390 px widths.
