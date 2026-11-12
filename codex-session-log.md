@@ -282,3 +282,15 @@ Reviewed the six slides and their timed narration against the course rubric and 
 **Codex**
 
 Reworked the six Process Video slides and English narration around the in-person playtest. Compared the original emphasis on getting a transcript into AI with participants’ need to see who said what and when and catch mistakes first. Showed the review interface with example data, condensed the backend story, and kept the live 90-second test distinct from the playtest. Shortened the target to 2:25 and checked all six slides at desktop and 390 px widths.
+
+---
+
+## 18. Making the Process Video understandable without prior context
+
+**Tony’s feedback**
+
+Open by saying what the project is in one sentence. Then state the most important job for the coding agents: help find a transcription tool and make it work on the website. Explain what WhisperX does before talking about the setup or the errors.
+
+**Codex**
+
+Revised slides 1–3 and their narration to define Duowen, state the live transcription challenge, and explain what an agent skill, WhisperX, and Deepgram each do. Verified the new opening and notes at desktop and 390 px widths.
