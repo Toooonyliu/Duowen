@@ -1,6 +1,7 @@
 Transcript Workspace — v2 交互演示
 
-在线网页：https://Toooonyliu.github.io/Duowen/
+在线网页：https://duowen-sandbox-trial.vercel.app/（当前版本，接入 Deepgram 转录）
+早期静态演示：https://Toooonyliu.github.io/Duowen/（旧界面，无转录后端）
 本地预览：npm run dev
 自包含文件：Transcript-Demo.html（包含短音频、图标及中文 PDF 字体，文件较大）。本轮通过本地 HTTP 验证；工具不允许直接 file:// 浏览，因此没有声称验证双击运行。
 

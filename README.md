@@ -2,7 +2,9 @@
 
 A minimal transcript workspace: **Upload → Library → Recording**.
 
-Website: https://Toooonyliu.github.io/Duowen/
+Website: https://duowen-sandbox-trial.vercel.app/ (current version, with Deepgram transcription)
+
+Earlier static demo: https://Toooonyliu.github.io/Duowen/ (older interface, no transcription backend)
 
 ## Features
 
