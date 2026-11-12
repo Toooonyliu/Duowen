@@ -256,3 +256,17 @@ Provided both complete English recording scripts in the chat, matching the curre
 **Codex**
 
 Rewrote the six timed English speaker notes to explain how AI agents helped define the upload test, research public transcription skills, get WhisperX running locally, and verify the Deepgram workflow on Vercel. Kept the six slides and the 2:45 timing intact.
+
+---
+
+## 16. Checking the Process Video against the course rubric
+
+**Tony**
+
+> Design an AI-powered tool that supports your own design process. Here you are your own user: reflecting on your own work in Projects 1 and 2 is the research (Discover). Choose one aspect of your process to support with AI and define what the tool needs to do (Define), ideate how it could work (Develop), then build, test, and evaluate a tool with an AI backend (Deliver). The core learning objective of this project is to move beyond prompt-based chat tools toward building your own tools with improved user interfaces for working with AI.
+>
+> 你看这是 rubric 里面的要求，你觉得我们现在的这个演讲稿也好，然后这个 slide deck 也好，process video，真的有反映出这里面想让我们做的事吗？精炼吗？
+
+**Codex**
+
+Reviewed the six slides and their timed narration against the course rubric and the separate Process Video brief. Identified the missing first-person Discover evidence and the need to show one AI-assisted interface decision alongside the backend research and live test.
