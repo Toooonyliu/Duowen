@@ -20,6 +20,8 @@ The user asked (2026-11) for the interaction and reading experience to follow th
 - **Projects:** recordings can be filed in a project (a folder for one context, such as a playtest round or a set of interviews). Projects appear on Home, in the sidebar, and as a "By project" grouping in the Library. Files added on a project page are filed in that project. Deleting a project never deletes its recordings.
 - **Send to AI:** the reason people export is to give transcripts to an AI assistant, not to read files. A project (or one recording) can be packed into a single Markdown file written for an assistant: reading instructions, the user's task, an index, then every recording as `[mm:ss] Speaker: text`. The dialog copies the pack and opens Claude or ChatGPT in a new tab, or downloads the `.md`. There is no direct account connection; do not claim one.
 - **One way in per screen:** Home's dropzone is the upload entry on Home, so the sidebar "New transcript" button is hidden there and shown on every other screen.
+- **Adding to a project:** "Add recordings" on a project offers both uploading new files and picking recordings already in the Library. It goes straight to the file picker only when the Library has nothing else to offer.
+- **Collaboration record:** `claude-session-log.md` logs every prompt and what was done in response. Never write a pasted secret into it.
 
 Browser QA must include timestamp seeking, speaker correction, inline text editing, file upload and narrow screens.
 

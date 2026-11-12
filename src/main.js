@@ -396,7 +396,7 @@ function libraryList() {
   const pool = inProject ? projectRecordings(active.projectId) : state.recordings;
   const filtered = pool.filter(r => [r.title, r.originalFilename, recordingProject(r)?.name || '', ...r.speakers.map(displayName)].some(v => v.toLowerCase().includes(query)));
   if (inProject) return filtered.length ? '<div class="batch-list">' + filtered.map(recordingModule).join('') + '</div>'
-    : `<div class="empty-state">${icon('folder-open')}<h2>This project is empty</h2><p>Drop recordings anywhere on this page and they are filed here. You can also move existing recordings in from the Library.</p><button class="button primary" data-action="choose-upload">${icon('plus')}Add recordings</button></div>`;
+    : `<div class="empty-state">${icon('folder-open')}<h2>This project is empty</h2><p>Add recordings you already have in your Library, or drop new files anywhere on this page.</p><button class="button primary" data-action="add-to-project" data-project-id="${esc(active.projectId)}">${icon('plus')}Add recordings</button></div>`;
   if (!filtered.length) return `<div class="empty-state">${icon(state.search ? 'magnifying-glass' : 'waveform')}<h2>${state.search ? 'No recordings found' : 'Your first recording starts here'}</h2><p>${state.search ? 'Try another file name, speaker or project.' : 'Add audio or video and its transcript will appear here.'}</p>${state.search ? '<button class="text-button" data-action="clear-search">Clear search</button>' : '<button class="button primary" data-action="upload">'+icon('plus')+'New transcript</button>'}</div>`;
   const byProject = state.libraryView === 'project';
   const groups = new Map();
@@ -423,7 +423,7 @@ function renderProject(project) {
   const ready = projectRecordings(project.id).filter(rec => rec.segments.length).length;
   return `<main class="shell library-shell project-shell">${toolbar('project')}
     <div class="library-context project-context"><div class="project-title"><a class="crumb" href="#/library">${icon('arrow-left')}Library</a><h1><button class="editable-title" data-action="rename-project" data-project-id="${id}" aria-label="Rename project: ${esc(project.name)}">${icon('folder')}${esc(project.name)}${icon('pencil-simple')}</button></h1><span>${esc(projectSummary(project.id))}</span></div>
-      <div class="library-tools"><button type="button" class="button secondary" data-action="choose-upload">${icon('plus')}Add recordings</button><button type="button" class="button primary" data-action="ai-pack" data-project-id="${id}" ${ready ? '' : 'disabled'}>${icon('sparkle')}Send to AI</button>${button('dots-three','Project actions','project-menu','data-project-id="' + id + '"','quiet')}</div></div>
+      <div class="library-tools"><button type="button" class="button secondary" data-action="add-to-project" data-project-id="${id}">${icon('plus')}Add recordings</button><button type="button" class="button primary" data-action="ai-pack" data-project-id="${id}" ${ready ? '' : 'disabled'}>${icon('sparkle')}Send to AI</button>${button('dots-three','Project actions','project-menu','data-project-id="' + id + '"','quiet')}</div></div>
     <div id="recording-list">${libraryList()}</div>
   </main>`;
 }
@@ -805,6 +805,12 @@ function renderDialog() {
   } else if (d.type === 'project-form') {
     const project = projectById(d.projectId);
     content=dialogFrame(project ? 'Rename project' : 'New project',`<form id="project-form"><label class="field-label" for="project-name">Project name</label><input id="project-name" name="name" class="text-input" value="${esc(project?.name || '')}" maxlength="80" placeholder="e.g. Playtest round 1" autocomplete="off" required>${project ? '' : `<p class="fine-print">${rec ? 'This recording will be filed in the new project.' : 'Recordings you drop on the project page are filed in it.'}</p>`}<div class="dialog-footer inline-footer"><button type="button" class="button secondary" data-action="close-dialog">Cancel</button><button type="submit" class="button primary">${project ? 'Save name' : 'Create project'}</button></div></form>`);
+  } else if (d.type === 'add-to-project') {
+    const project = projectById(d.projectId);
+    const candidates = state.recordings.filter(r => r.projectId !== project.id || !projectById(r.projectId));
+    content=dialogFrame('Add recordings to ' + esc(project.name),`<button type="button" class="speaker-list-row upload-row" data-action="choose-upload"><span class="speaker-avatar">${icon('upload-simple')}</span><span><strong>Upload new files</strong><small>Audio or video from this device. They are transcribed and filed here.</small></span>${icon('arrow-right')}</button>
+      <form id="add-existing-form"><span class="field-label">From your Library</span><div class="speaker-list pick-list">${candidates.map(r => `<label class="speaker-list-row pick-row"><input type="checkbox" name="recording" value="${esc(r.id)}"><span><strong>${esc(r.title)}</strong><small>${formatTime(r.duration)} · ${esc(dayLabel(r.uploadedAt))}${recordingProject(r) ? ' · currently in ' + esc(recordingProject(r).name) : ''}</small></span></label>`).join('')}</div>
+      <div class="dialog-footer inline-footer"><button type="button" class="button secondary" data-action="close-dialog">Cancel</button><button type="submit" class="button primary" id="add-existing-submit" disabled>Add selected</button></div></form>`);
   } else if (d.type === 'move') {
     const row = (projectId, label, detail, name) => `<button type="button" class="speaker-list-row ${(rec.projectId || '') === projectId && (!rec.projectId || projectById(rec.projectId)) ? 'is-current' : ''}" data-action="assign-project" data-id="${esc(rec.id)}" data-project-id="${esc(projectId)}"><span class="speaker-avatar">${icon(name)}</span><span><strong>${esc(label)}</strong><small>${esc(detail)}</small></span>${(rec.projectId || '') === projectId ? icon('check') : ''}</button>`;
     content=dialogFrame('Move to project',`<div class="speaker-list">${state.projects.map(project => row(project.id, project.name, projectSummary(project.id), 'folder')).join('')}${row('', 'No project', 'Keep it only in the Library', 'tray')}<button type="button" class="speaker-list-row" data-action="new-project" data-id="${esc(rec.id)}"><span class="speaker-avatar">${icon('plus')}</span><span><strong>New project…</strong><small>Create one and file this recording in it</small></span></button></div>`);
@@ -1255,7 +1261,13 @@ document.addEventListener('click',async event=>{
   if(action==='open'){navigate(rec.id);return;}
   if(action==='clear-search'){state.search='';render();return;}
   if(action==='info'){openDialog({type:'info'});return;}
-  if(action==='choose-upload'){chooseFiles();return;}
+  if(action==='choose-upload'){if(state.dialog)closeDialog();chooseFiles();return;}
+  if(action==='add-to-project'){
+    // With nothing else in the Library there is only one way to add, so skip the question.
+    const project=projectById(target.dataset.projectId);if(!project)return;
+    if(state.recordings.some(r=>r.projectId!==project.id || !projectById(r.projectId)))openDialog({type:'add-to-project',projectId:project.id});else chooseFiles();
+    return;
+  }
   if(action==='library-view'){state.libraryView=target.dataset.view;state.collapsedBatches.clear();render();return;}
   if(action==='new-project'){openDialog({type:'project-form',recordingId:target.dataset.id || null});return;}
   if(action==='rename-project'){openDialog({type:'project-form',projectId:target.dataset.projectId});return;}
@@ -1337,6 +1349,7 @@ document.addEventListener('input',event=>{
   if(event.target.matches('[data-seek]'))seekTo(recordById(event.target.dataset.seek),Number(event.target.value),false);
 });
 document.addEventListener('change',event=>{
+  if(event.target.matches('.pick-row input')){const count=$$('.pick-row input:checked').length,submit=$('#add-existing-submit');submit.disabled=!count;submit.textContent=count?'Add '+count+' recording'+(count===1?'':'s'):'Add selected';}
   if(event.target.matches('[data-seek]')){const rec=recordById(event.target.dataset.seek);if(rec&&route().id===rec.id&&state.detailTab==='transcript')followPlayback(rec);}
   if(event.target.matches('[data-speed]')){state.rate=Number(event.target.value);audio.playbackRate=state.rate;$$('[data-speed]').forEach(select=>select.value=state.rate);}
   if(event.target.matches('[data-note-action]')){
@@ -1362,6 +1375,12 @@ document.addEventListener('submit',event=>{
     }else{speaker.name=name;speaker.confirmed=true;delete speaker.suggestedName;}
     if(data.get('saveName')&&!state.knownSpeakers.some(s=>s.name.toLowerCase()===name.toLowerCase()))state.knownSpeakers.push({id:uid(),name});
     rec.notesStale=true;state.answer=null;persist();closeDialog();render();notify('Speaker updated in this recording.','undo');return;
+  }
+  if(event.target.id==='add-existing-form'){
+    event.preventDefault();const project=projectById(state.dialog.projectId),ids=new FormData(event.target).getAll('recording');
+    if(!project||!ids.length)return;
+    state.recordings.filter(r=>ids.includes(r.id)).forEach(r=>{r.projectId=project.id;});
+    persist();closeDialog();render();notify(ids.length+' recording'+(ids.length===1?'':'s')+' added to '+project.name+'.');return;
   }
   if(event.target.id==='project-form'){
     event.preventDefault();const name=String(new FormData(event.target).get('name')||'').trim(),d=state.dialog;if(!name)return;

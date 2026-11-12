@@ -1101,3 +1101,12 @@ body { background: var(--surface); }
 .library-context > .project-title:first-child { display: block; min-width: 0; }
 .project-context .library-tools .button { white-space: nowrap; }
 @media (max-width: 600px) { .project-context .library-tools .button { padding: 8px 12px; } }
+
+/* Add recordings to a project: upload new files or pick from the Library. */
+.upload-row { margin-bottom: 22px; }
+.upload-row > .ph { font-size: 18px; color: var(--secondary); }
+.pick-list { max-height: min(46vh, 380px); overflow-y: auto; overscroll-behavior: contain; padding: 2px; }
+.pick-row { cursor: pointer; }
+.pick-row input { flex: 0 0 18px; width: 18px; height: 18px; margin: 0; accent-color: var(--accent); }
+.pick-row:has(input:checked) { border-color: var(--line-strong); background: #eef6f6; }
+.pick-row small { display: block; }
