@@ -1,0 +1,4 @@
+# The bundled sample recording is a repository fixture for tests and the
+# standalone export. The hosted site starts with an empty library and must
+# not serve it.
+public/samples

@@ -13,6 +13,7 @@ The user asked (2026-11) for the interaction and reading experience to follow th
 - **Waiting:** while a recording is transcribed, show one status line, one progress bar and a skeleton of the transcript to come. No multi-step stepper.
 - **Tabs:** Notes appears only when a recording actually has notes; Ask stays available for every transcript. Do not show an empty Notes tab.
 - **Scrubbing:** releasing the seek bar scrolls the transcript to that moment.
+- **Empty by default:** a visitor's library starts empty. Never show the Studio Brainstorming sample, or any recording the visitor did not add, in the hosted app. The sample stays in `public/samples` only as a fixture for tests and the standalone export, and `.vercelignore` keeps it off the hosted site.
 
 Browser QA must include timestamp seeking, speaker correction, inline text editing, file upload and narrow screens.
 

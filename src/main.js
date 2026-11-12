@@ -187,7 +187,7 @@ function normalize(rec, index) {
   return normalized;
 }
 async function init() {
-  root.innerHTML = '<main class="shell loading-screen" aria-label="Loading demo"><span class="loading-ring"></span><span>Opening samples…</span></main>';
+  root.innerHTML = '<main class="shell loading-screen" aria-label="Loading demo"><span class="loading-ring"></span><span>Opening Duowen…</span></main>';
   if (getTranscriptionMode().engine === 'deepgram') {
     checkDeepgramAvailability().then(status => {
       state.deepgramStatus = status;
@@ -195,7 +195,9 @@ async function init() {
     });
   }
   try {
-    const payload = window.__DEMO_RECORDINGS__ || await fetch('./samples/sample-recordings.json').then(r => { if (!r.ok) throw new Error('Samples could not be loaded'); return r.json(); });
+    // A visitor's library starts empty: only recordings they add appear in it.
+    // The standalone export can still embed recordings through __DEMO_RECORDINGS__.
+    const payload = window.__DEMO_RECORDINGS__ || [];
     const samples = Array.isArray(payload) ? payload : payload.recordings || [];
     state.seed = samples.map(normalize);
     state.seedSignature = JSON.stringify(state.seed.map(r => [r.id,r.source,r.originalFilename,r.duration,r.segments.map(s=>[s.id,s.start,s.end,s.text])]));
@@ -219,7 +221,7 @@ async function init() {
   } catch (error) {
     state.loading = false;
     render();
-    notify('Sample files are unavailable. You can still add your own audio.');
+    notify('Your saved library could not be opened. You can still add a recording.');
   }
 }
 function excerptInfo(rec) {
@@ -292,7 +294,7 @@ function recordingModule(rec) {
 function libraryList() {
   const query = state.search.toLowerCase().trim();
   const filtered = state.recordings.filter(r => [r.title, r.originalFilename, ...r.speakers.map(displayName)].some(v => v.toLowerCase().includes(query)));
-  if (!filtered.length) return `<div class="empty-state">${icon(state.search ? 'magnifying-glass' : 'waveform')}<h2>${state.search ? 'No recordings found' : 'Your first recording starts here'}</h2><p>${state.search ? 'Try another file name or speaker.' : 'Add audio or video, or restore the sample library.'}</p>${state.search ? '<button class="text-button" data-action="clear-search">Clear search</button>' : '<button class="button primary" data-action="upload">'+icon('plus')+'New transcript</button>'}</div>`;
+  if (!filtered.length) return `<div class="empty-state">${icon(state.search ? 'magnifying-glass' : 'waveform')}<h2>${state.search ? 'No recordings found' : 'Your first recording starts here'}</h2><p>${state.search ? 'Try another file name or speaker.' : 'Add audio or video and its transcript will appear here.'}</p>${state.search ? '<button class="text-button" data-action="clear-search">Clear search</button>' : '<button class="button primary" data-action="upload">'+icon('plus')+'New transcript</button>'}</div>`;
   const groups = new Map();
   filtered.forEach(r => { if (!groups.has(r.batchId)) groups.set(r.batchId, []); groups.get(r.batchId).push(r); });
   return [...groups.entries()].map(([id, recs]) => `<section class="batch" aria-label="Uploaded ${esc(dateLabel(recs[0].uploadedAt))}">
@@ -301,7 +303,7 @@ function libraryList() {
   </section>`).join('');
 }
 function renderLibrary() {
-  return `<main class="shell library-shell">${toolbar()}<div class="library-context"><div><h1>Library</h1><span>${state.recordings.length} recording${state.recordings.length === 1 ? '' : 's'}</span></div><div class="search-field">${icon('magnifying-glass')}<input id="library-search" type="search" autocomplete="off" placeholder="Search recordings" value="${esc(state.search)}" aria-label="Search recordings"></div></div><div id="recording-list">${libraryList()}</div><footer class="library-footer"><button type="button" class="quiet-link" data-action="info">About the recordings and local playback</button></footer></main>`;
+  return `<main class="shell library-shell">${toolbar()}<div class="library-context"><div><h1>Library</h1><span>${state.recordings.length} recording${state.recordings.length === 1 ? '' : 's'}</span></div><div class="search-field">${icon('magnifying-glass')}<input id="library-search" type="search" autocomplete="off" placeholder="Search recordings" value="${esc(state.search)}" aria-label="Search recordings"></div></div><div id="recording-list">${libraryList()}</div><footer class="library-footer"><button type="button" class="quiet-link" data-action="info">About Duowen and your data</button></footer></main>`;
 }
 function recentMarkup() {
   const recent = state.recordings.slice(0, 3);
@@ -659,8 +661,8 @@ function renderDialog() {
     const excerpt=sample ? excerptInfo(sample) : null;
     const excerptDescription=excerpt ? (excerpt.start===0 ? 'First '+Math.round(excerpt.duration)+' seconds of '+formatTime(excerpt.original)+' source recording.' : formatTime(excerpt.start)+'–'+formatTime(excerpt.end)+' excerpt of '+formatTime(excerpt.original)+' source recording.') : '';
     const sourceInfo=sample && isAsrDraft(sample) ? `<div class="notice source-notice">${icon('info')}<span><strong>${esc(sample.title)} · ASR draft</strong><br>${excerptDescription ? esc(excerptDescription)+'<br>' : ''}Uncorrected text with approximate segment timestamps. ${hasUnassignedSegments(sample) ? 'Speakers have not been separated; Unknown speaker is an unassigned bucket.' : 'Speaker names have been manually assigned.'}</span></div>${provenance ? '<details class="source-details"><summary>How this recording was prepared</summary><p>' + esc(provenance.transcript || '') + '</p><p>' + esc(provenance.timestamps || '') + '</p><p>' + esc(provenance.notesAndQa || '') + '</p></details>' : ''}` : '';
-    content=dialogFrame('About Duowen',`<p class="dialog-lead">Listen, find the moment, and make the transcript yours.</p>${sourceInfo}<div class="info-feature">${icon('waveform')}<div><h3>A sample library to explore</h3><p>Bundled recordings include timestamped transcripts, prepared notes and source-linked answers.</p></div></div><div class="info-feature">${icon('lock-key')}<div><h3>Audio & privacy</h3><p>${mode.configured?`Audio and video are sent to ${esc(mode.label)} for transcription.`:'Audio and video uploads are unavailable.'} Your transcript and edits are saved in this browser.</p></div></div>${providerDetails(mode)}<div class="info-feature">${icon('sparkle')}<div><h3>Automatic, with clear feedback</h3><p>New recordings are transcribed automatically. Processing states reflect the actual job. Speaker separation is shown only when the service returns it; saved names do not perform voice matching.</p></div></div><p class="fine-print">Edits are saved in this browser. Local audio files need reconnecting after a refresh.</p>`,
-      '<button class="quiet-link" data-action="confirm-reset">' + icon('arrow-counter-clockwise') + 'Reset demo</button><button class="button primary" data-action="close-dialog">Explore</button>');
+    content=dialogFrame('About Duowen',`<p class="dialog-lead">Listen, find the moment, and make the transcript yours.</p>${sourceInfo}<div class="info-feature">${icon('waveform')}<div><h3>Your recordings, your library</h3><p>Only recordings you add appear here. Each one gets a timestamped transcript with speakers you can rename.</p></div></div><div class="info-feature">${icon('lock-key')}<div><h3>Audio & privacy</h3><p>${mode.configured?`Audio and video are sent to ${esc(mode.label)} for transcription.`:'Audio and video uploads are unavailable.'} Your transcript and edits are saved in this browser.</p></div></div>${providerDetails(mode)}<div class="info-feature">${icon('sparkle')}<div><h3>Automatic, with clear feedback</h3><p>New recordings are transcribed automatically. Processing states reflect the actual job. Speaker separation is shown only when the service returns it; saved names do not perform voice matching.</p></div></div><p class="fine-print">Edits are saved in this browser. Local audio files need reconnecting after a refresh.</p>`,
+      '<button class="quiet-link" data-action="confirm-reset">' + icon('trash') + 'Clear library</button><button class="button primary" data-action="close-dialog">Done</button>');
   } else if (d.type === 'speaker') {
     const speaker=speakerById(rec,d.speakerId);
     content=dialogFrame('Edit speaker',`<form id="speaker-form"><label class="field-label" for="speaker-name">Display name</label><input class="text-input" id="speaker-name" name="name" required maxlength="100" value="${esc(displayName(speaker))}" autocomplete="off">
@@ -685,10 +687,10 @@ function renderDialog() {
     content=dialogFrame('Reconnect audio',`<p class="dialog-lead">Choose <strong>${esc(rec.originalFilename)}</strong> again ${rec.segments.length?'to listen':'to resume transcription'}.</p><p class="fine-print">${rec.segments.length?'Your transcript and edits are saved.':'You do not need to upload a transcript file.'} Audio files need reconnecting after a page refresh.</p>`,
       '<button class="button secondary" data-action="close-dialog">Cancel</button><button class="button primary" data-action="choose-reconnect" data-id="' + esc(rec.id) + '">Choose audio file</button>');
   } else if (d.type === 'confirm-reset') {
-    content=dialogFrame('Reset this demo?', '<p>Restore the sample library and its original names, transcript text and notes. Recordings you added and saved names will be removed from this demo.</p>',
-      '<button class="button secondary" data-action="close-dialog">Keep changes</button><button class="button danger" data-action="reset">Reset demo</button>');
+    content=dialogFrame('Clear your library?', '<p>Every recording, transcript, edit and saved speaker name will be removed from this browser. Your original files will not be changed.</p>',
+      '<button class="button secondary" data-action="close-dialog">Keep everything</button><button class="button danger" data-action="reset">Clear library</button>');
   } else if (d.type === 'confirm-remove') {
-    content=dialogFrame('Remove recording?', '<p>Remove <strong>' + esc(rec.title) + '</strong> and its edits from this demo library. Your original file will not be changed.</p>',
+    content=dialogFrame('Remove recording?', '<p>Remove <strong>' + esc(rec.title) + '</strong> and its edits from your library. Your original file will not be changed.</p>',
       '<button class="button secondary" data-action="close-dialog">Keep recording</button><button class="button danger" data-action="remove-recording" data-id="' + esc(rec.id) + '">Remove</button>');
   }
   dialog.innerHTML=content;
@@ -1126,7 +1128,7 @@ document.addEventListener('click',async event=>{
   if(action==='reset'){
     if(!await cancelAllTranscriptions()){closeDialog();notify('Cloud cancellation is still pending. Keep this library and reset after confirmation.');return;}localFiles.clear();
     clearAudio();state.recordings.forEach(r=>{if(r.audioUrl?.startsWith('blob:'))URL.revokeObjectURL(r.audioUrl);});
-    state.recordings=clone(state.seed);state.knownSpeakers=[];state.processing={};state.search='';state.libraryScroll=0;state.collapsedBatches.clear();persist();closeDialog();navigate();notify('Demo restored.');return;
+    state.recordings=clone(state.seed);state.knownSpeakers=[];state.processing={};state.search='';state.libraryScroll=0;state.collapsedBatches.clear();persist();closeDialog();navigate();notify('Library cleared.');return;
   }
   if(action==='confirm-remove'){openDialog({type:'confirm-remove',recordingId:rec.id});return;}
   if(action==='remove-recording'){
