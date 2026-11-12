@@ -294,3 +294,15 @@ Open by saying what the project is in one sentence. Then state the most importan
 **Codex**
 
 Revised slides 1–3 and their narration to define Duowen, state the live transcription challenge, and explain what an agent skill, WhisperX, and Deepgram each do. Verified the new opening and notes at desktop and 390 px widths.
+
+---
+
+## 19. Completing the full Process Video script
+
+**Tony’s feedback**
+
+Provide the complete speech, not just the first three slides, and make sure it answers the professor’s question.
+
+**Codex**
+
+Provided all six timed English sections and synced the deck notes. The speech connects the project definition and the hardest technical problem to concrete AI assistance, the in-person playtest, and the live transcription check.
