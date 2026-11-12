@@ -306,3 +306,19 @@ Provide the complete speech, not just the first three slides, and make sure it a
 **Codex**
 
 Provided all six timed English sections and synced the deck notes. The speech connects the project definition and the hardest technical problem to concrete AI assistance, the in-person playtest, and the live transcription check.
+
+---
+
+## 20. Rebuilding the portfolio around a clear design story
+
+**Tony**
+
+> OK，嗯，这个部分我已经过了。那现在 focus back on the website。我觉得现在最大的问题是，我觉得它整体的结构还是太散了，而且有点各说各话，它没有一个清晰的 storyline。假设这是一个 portfolio 的话，我们需要在这个里边展示什么？我们第一个需要去展示我们整个这个 idea 是什么，我们为什么要做这个工具，市面上它有什么样子的比较，对不对？这些是我们需要展示的。比如说 user journey map，或者说是 competitive research，这些都是需要去展示的内容啊。然后与此同时，我们也需要去展示我们这个 app 里面主要是有什么 feature。我们需要一二三地列出来，对吧？然后这些 feature，它为什么是有特点、有特色的，用非常简单的这种 bullet point 的形式也好，或者一句话的描述也好，就把它展示出来。这是整个 design 的部分需要去描述的。那 AI process 的部分就不用多说了。第一个就是说我是怎么让 AI 去帮我找到 suitable 的这个 skill 的，然后怎么样 AI 去帮我解析我需要让这个东西正式地上线，在网站上面能够成功地运行，我需要几个部分，这个地方到底需不需要后端，我后端需要怎么样去部署，我选择了什么样的后端，比如说 Vercel，对不对？以及整体的我们怎么样用 AI 去做，比如说 debug 的部分，或者说修复的部分，UI 整理的部分，这些是需要去在网站上去展示的。那现在你作为一个专业的这种 portfolio design 的身份，你去把这个网站重新地 review 一遍，并且按照我刚刚说的逻辑去想想怎么样去更好地去展示这些信息，以一个 storytelling 的形式。然后我希望有，比如说需要有一些 drawing 或者 illustrative 的这种信息的时候，你自己把它补上去。比如 user journey map，需要有一个表格吧，对吧？需要有一个走线图吧。然后该用表情的时候用表情，不要全部都用文字，非常 overwhelming 读起来。 然后该用 illustrative image 就用 illustrative image。然后 competitive research 也是可以调用我们之前 chat 里面真的做过的 competitive research，从价格呀，然后花销啊，以及它信息的这种展示的这种可读性的程度来分析市面上已经有的不同的和我们这个 idea 类似的竞品是怎么样子的。然后包括我们后面的这个 demo 也可以。其实 Flighty 和 Memby 做得都非常好的，但我不知道为什么现在这个做得不是特别好。而且整体的这种网站的设计风格现在也不是很清晰，不是很明了，非常的 AI 化，这些都是需要去改变的。
+
+**Codex**
+
+Reviewed the existing Design and AI Process pages alongside the Flighty and Mibly portfolio references. Rebuilt the Design page around the personal need, a four-stage user journey, competitive research, playtest feedback, three numbered features with switchable actual-app screenshots, and verified results. Added a connected journey diagram and a structured journey table, replaced repeated text blocks with clearer visual hierarchy, and verified competitor prices and documented review/export features against official sources. The comparison does not claim that competitors lack review tools or AI connectors, and does not invent usability scores.
+
+Rebuilt the AI Process page around skill research, the browser → Vercel API → Deepgram → editor architecture, WhisperX setup/debugging, deployment configuration, and AI-assisted UI revisions. Kept the live large-file path and full-length-session evaluation explicitly pending. Existing video decks and speeches were unchanged.
+
+Validated the pages at desktop and 390 px widths, checked tab switching and keyboard navigation, loaded the actual screenshots, checked local links/assets and JavaScript syntax, and found no page overflow or browser console errors. Saved the portfolio changes on codex/duowen-project-3 (commit 8b3c8fa); no main merge or production deployment was performed.
