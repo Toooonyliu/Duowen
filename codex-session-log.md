@@ -220,3 +220,15 @@ Provided concise English scripts for the 3:30 Project and 2:45 Process decks, wi
 **Codex**
 
 Corrected the portfolio case study, AI Process page, and Project Video cover to Duowen 多闻. The character 闻 refers to hearing.
+
+---
+
+## 13. Clarifying Alex’s recurring workflow and the product comparison
+
+**Tony**
+
+> 我觉得还是有几个问题。第一个问题就是在说 Alex 的时候，我们不能说他就是有一个 40 minutes recording 吧。这个很显然不是重点嘛，对吧？Alex 应该先说他的需求，对吧？他应该是 he will constantly make recording of his classes, discussion sessions, and meetings. And the reason he do this is because of 什么什么什么。比如说, first he wants the exact wording, so he can trace back the record。然后同时，他会经常把这些 recording 同步给他的 AI agents。这样子的话呢，在他 work on a project 的时候，他就可以经常性地去给他的 AI agents update 对应的 context。这样子 AI agents 也能更好地理解他的需求。那所以但是呢，然后接着说到下一页的时候，我们也不应该直接说什么 auto basic, no fee。这个应该是在我们具体选取 model 的时候去说的。我们具体要说的实际上是，比如说在市面上的已经有的这些，比如说 AI transcript 的这种网站，或者说 speech to text 的这种网站，他们是有哪些，对吧？就是你之前帮我做的这些，就是 competitor analysis，对吧？我们应该列的是这些东西，而不是具体的这些 API，或者这些 skilled model，对吧？我觉得这个地方 slide deck 以及演讲稿都需要改一改。
+
+**Codex**
+
+Revised Project Video slides 2 and 3 and their timed English speaker notes. Alex regularly records classes, discussions, and meetings to verify exact wording and keep his AI agents current with project context. The competitive analysis compares the user workflows of Otter, Notta, and Fireflies. The Process Video retains backend model and API pricing comparisons. Verified both revised slides and their speaker notes in the browser.
