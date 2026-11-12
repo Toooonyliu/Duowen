@@ -12,6 +12,7 @@ Earlier static demo: https://Toooonyliu.github.io/Duowen/ (older interface, no t
 - Upload to a real WhisperX service, follow processing stages, resume after reload and cancel remote work.
 - Review timestamped transcripts; seek audio; rename or assign speakers and edit text.
 - Export PDF, Word DOCX, Markdown, TXT, SRT, VTT and JSON.
+- Group recordings into projects and send a whole project to Claude or ChatGPT as one AI-readable Markdown transcript pack.
 - PDF runs in a background worker with recoverable errors and a 60-second job limit.
 - Prepared notes and example questions link back to transcript passages.
 

@@ -17,6 +17,9 @@ The user asked (2026-11) for the interaction and reading experience to follow th
 - **Audio stays:** uploaded audio is kept in the browser (IndexedDB) so playback works after a refresh. "Reconnect audio" is only a fallback when the browser no longer has the file.
 - **Dialogs:** focus the field or the primary action, never the close button; open scrolled to the top; offer only actions that apply to the recording. Export shows PDF, Word and plain text first, other formats under "More formats".
 - **Plain labels:** no internal jargon ("Local", "ASR draft", segment counts) on a visitor's own recordings. The Ask panel for uploads is described as passage search, not as written answers.
+- **Projects:** recordings can be filed in a project (a folder for one context, such as a playtest round or a set of interviews). Projects appear on Home, in the sidebar, and as a "By project" grouping in the Library. Files added on a project page are filed in that project. Deleting a project never deletes its recordings.
+- **Send to AI:** the reason people export is to give transcripts to an AI assistant, not to read files. A project (or one recording) can be packed into a single Markdown file written for an assistant: reading instructions, the user's task, an index, then every recording as `[mm:ss] Speaker: text`. The dialog copies the pack and opens Claude or ChatGPT in a new tab, or downloads the `.md`. There is no direct account connection; do not claim one.
+- **One way in per screen:** Home's dropzone is the upload entry on Home, so the sidebar "New transcript" button is hidden there and shown on every other screen.
 
 Browser QA must include timestamp seeking, speaker correction, inline text editing, file upload and narrow screens.
 

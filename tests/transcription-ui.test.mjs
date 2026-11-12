@@ -106,6 +106,7 @@ function createHarness() {
     clearInterval: callback => intervals.delete(callback),
     audioMetadata: async () => ({ duration: 90, error: false }),
     storeAudio() {},
+    route: () => ({ view: 'upload' }),
     navigate: id => navigation.push(id),
     closeDialog() {},
     render() {},
