@@ -2,7 +2,11 @@
 
 A minimal transcript workspace: **Upload → Library → Recording**.
 
-Website: https://Toooonyliu.github.io/Duowen/
+**[Open Duowen →](https://duowen-sandbox-trial.vercel.app/#/upload)**
+
+The public Vercel app transcribes uploaded recordings with Deepgram Nova-3. Use this link to upload audio or video and open the transcript workspace.
+
+[Earlier GitHub Pages demo](https://toooonyliu.github.io/Duowen/) · the static prototype described below.
 
 ## Features
 
@@ -12,7 +16,7 @@ Website: https://Toooonyliu.github.io/Duowen/
 - PDF runs in a background worker with recoverable errors and a 60-second job limit.
 - Prepared notes and example questions link back to transcript passages.
 
-## Current prototype limits
+## GitHub Pages demo limits
 
 The bundled sample is the first 90 seconds of `360 Studio Brainstorming.m4a` (original 08:40). Local WhisperX produced an uncorrected Chinese ASR draft with approximate segment timestamps. Automatic speaker separation has not run; Unknown speaker means unassigned. The sample is included for this user-authorized public demo. Original long recordings and other recordings are excluded.
 
